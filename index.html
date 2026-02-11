@@ -19,7 +19,15 @@
         </div>
         <div class="header-right">
             <span id="header-clock"></span>
-            <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode">🌙</button>
+            <select id="theme-select" class="theme-select" title="Color theme">
+                <option value="light">☀️ Light</option>
+                <option value="dark">🌙 Dark</option>
+                <option value="high-contrast">🔲 High Contrast</option>
+                <option value="midnight">🌌 Midnight Blue</option>
+                <option value="sepia">📜 Warm Sepia</option>
+                <option value="usps-light">📬 USPS Light</option>
+                <option value="usps-dark">📬 USPS Dark</option>
+            </select>
             <span id="header-clerk" class="clerk-badge" title="Click to change clerk name"></span>
         </div>
     </header>
@@ -81,6 +89,7 @@
     <script src="js/pages/export.js"></script>
     <script src="js/pages/quick-scan.js"></script>
     <script src="js/pages/clerk-station.js"></script>
+    <script src="js/auto-backup.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

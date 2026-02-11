@@ -3,30 +3,29 @@
  * Initializes database, UI, and scanner modules.
  */
 
+const THEMES = ['light', 'dark', 'high-contrast', 'midnight', 'sepia', 'usps-light', 'usps-dark'];
+
 async function initTheme() {
-    const toggle = document.getElementById('theme-toggle');
+    const select = document.getElementById('theme-select');
     const saved = await DB.getSetting('theme', 'light');
     applyTheme(saved);
 
-    toggle.addEventListener('click', async () => {
-        const current = document.documentElement.getAttribute('data-theme');
-        const next = current === 'dark' ? 'light' : 'dark';
-        applyTheme(next);
-        await DB.setSetting('theme', next);
+    select.addEventListener('change', async () => {
+        applyTheme(select.value);
+        await DB.setSetting('theme', select.value);
     });
 }
 
 function applyTheme(theme) {
-    const toggle = document.getElementById('theme-toggle');
-    if (theme === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        toggle.textContent = '☀️';
-        toggle.title = 'Switch to light mode';
-    } else {
+    const select = document.getElementById('theme-select');
+    if (!THEMES.includes(theme)) theme = 'light';
+
+    if (theme === 'light') {
         document.documentElement.removeAttribute('data-theme');
-        toggle.textContent = '🌙';
-        toggle.title = 'Switch to dark mode';
+    } else {
+        document.documentElement.setAttribute('data-theme', theme);
     }
+    select.value = theme;
 }
 
 (async function init() {
@@ -77,6 +76,9 @@ function applyTheme(theme) {
                 document.body.insertBefore(banner, document.body.firstChild);
             }
         }
+
+        // Start auto-backup scheduler
+        AutoBackup.start();
 
         // Navigate to home
         UI.navigateTo('home');

@@ -46,23 +46,6 @@ const Scanner = (() => {
         }
     }
 
-    // Request high-resolution camera with continuous autofocus and zoom
-    function getCameraConstraints(facingMode) {
-        const constraints = {
-            facingMode: facingMode,
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-        };
-        // Request continuous autofocus and max zoom if supported
-        if (navigator.mediaDevices && 'getSupportedConstraints' in navigator.mediaDevices) {
-            const supported = navigator.mediaDevices.getSupportedConstraints();
-            if (supported.focusMode) {
-                constraints.advanced = [{ focusMode: 'continuous' }];
-            }
-        }
-        return constraints;
-    }
-
     // After camera starts, try to apply zoom and focus for better barcode reading
     // Delayed slightly to ensure the video track is fully initialized
     function applyAdvancedCameraSettings() {

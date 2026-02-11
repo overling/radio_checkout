@@ -3,7 +3,13 @@
  */
 UI.registerPage('assets', async (container) => {
     container.innerHTML = `
-        <h2 class="page-title">📦 Asset Management</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem;">
+            <h2 class="page-title" style="margin-bottom:0;">📦 Asset Management</h2>
+            <div style="display:flex;gap:0.5rem;">
+                <button class="btn btn-outline" id="goto-print-codes">🏷️ Print Codes</button>
+                <button class="btn btn-outline" id="goto-export">💾 Export</button>
+            </div>
+        </div>
         <div class="tabs">
             <button class="tab-btn active" data-tab="radios-tab">Radios</button>
             <button class="tab-btn" data-tab="batteries-tab">Batteries</button>
@@ -26,6 +32,10 @@ UI.registerPage('assets', async (container) => {
             document.getElementById(btn.dataset.tab).classList.add('active');
         });
     });
+
+    // Shortcut navigation buttons
+    document.getElementById('goto-print-codes').addEventListener('click', () => UI.navigateTo('print-codes'));
+    document.getElementById('goto-export').addEventListener('click', () => UI.navigateTo('export'));
 
     await renderRadiosTab();
     await renderBatteriesTab();
@@ -211,7 +221,12 @@ function showAddRadioModal() {
 
         UI.closeModal();
         UI.toast('Radio added successfully', 'success');
-        UI.navigateTo('assets');
+        // Offer to print label for the new radio
+        if (window.confirm(`Radio "${id}" added.\n\nGo to Print Codes to print a label for it?`)) {
+            UI.navigateTo('print-codes');
+        } else {
+            UI.navigateTo('assets');
+        }
     });
 }
 

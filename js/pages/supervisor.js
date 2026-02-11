@@ -9,7 +9,13 @@ UI.registerPage('supervisor', async (container) => {
     const auditLog = await DB.getAll('auditLog');
 
     container.innerHTML = `
-        <h2 class="page-title">📊 Supervisor Dashboard</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem;">
+            <h2 class="page-title" style="margin-bottom:0;">📊 Supervisor Dashboard</h2>
+            <div style="display:flex;gap:0.5rem;">
+                <button class="btn btn-outline" onclick="UI.navigateTo('assets')">📦 Assets</button>
+                <button class="btn btn-outline" onclick="UI.navigateTo('export')">💾 Export</button>
+            </div>
+        </div>
 
         <div class="stats-row">
             <div class="stat-card success">

@@ -5,7 +5,7 @@
  */
 const DB = (() => {
     const DB_NAME = 'AssetTrackerDB';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     let db = null;
 
     const STORES = {
@@ -15,7 +15,8 @@ const DB = (() => {
         technicians: { keyPath: 'id', indexes: ['badgeId', 'name'] },
         transactions: { keyPath: 'id', indexes: ['assetId', 'technicianId', 'type', 'timestamp'] },
         auditLog: { keyPath: 'id', indexes: ['entityId', 'entityType', 'timestamp', 'action'] },
-        settings: { keyPath: 'key' }
+        settings: { keyPath: 'key' },
+        backups: { keyPath: 'id', indexes: ['timestamp'] }
     };
 
     function open() {
@@ -127,12 +128,15 @@ const DB = (() => {
         return put('settings', { key, value });
     }
 
-    // Export all data for backup
+    // Export all data for backup (excludes internal backups store)
     async function exportAll() {
         await open();
         const data = {};
+        const exclude = ['backups'];
         for (const storeName of Object.keys(STORES)) {
-            data[storeName] = await getAll(storeName);
+            if (!exclude.includes(storeName)) {
+                data[storeName] = await getAll(storeName);
+            }
         }
         return data;
     }

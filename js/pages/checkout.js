@@ -89,7 +89,7 @@ UI.registerPage('checkout', async (container) => {
 
             if (!radio) {
                 resultEl.className = 'step-result error';
-                resultEl.textContent = `Radio "${value}" not found. Please add it in Asset Management first.`;
+                resultEl.innerHTML = `Radio "${value}" not found. <a href="#" style="color:var(--primary);text-decoration:underline;" onclick="UI.navigateTo('assets');return false;">Add it in Asset Management</a>`;
                 radioId = null;
                 return;
             }

@@ -12,7 +12,10 @@ UI.registerPage('print-codes', async (container) => {
     ];
 
     container.innerHTML = `
-        <h2 class="page-title">🏷️ Print Codes</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem;">
+            <h2 class="page-title" style="margin-bottom:0;">🏷️ Print Codes</h2>
+            <button class="btn btn-outline" id="goto-assets-from-print">📦 Manage Assets</button>
+        </div>
 
         <div class="card">
             <div class="card-header">
@@ -91,6 +94,9 @@ UI.registerPage('print-codes', async (container) => {
             <div id="pc-labels" class="labels-grid"></div>
         </div>
     `;
+
+    // Navigation shortcut
+    document.getElementById('goto-assets-from-print').addEventListener('click', () => UI.navigateTo('assets'));
 
     // Mode toggle
     document.getElementById('pc-mode').addEventListener('change', (e) => {
