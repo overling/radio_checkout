@@ -1,43 +1,150 @@
 /**
  * Barcode / QR Code Scanner Module
- * Supports webcam scanning and USB handheld scanner (keyboard emulation).
+ * Supports webcam scanning via html5-qrcode and USB handheld scanner (keyboard emulation).
+ * Recognized formats: QR, Code 128, Code 39, EAN, UPC, PDF417, Data Matrix, and more.
  */
 const Scanner = (() => {
-    let cameraStream = null;
+    let html5Scanner = null;
     let scanCallback = null;
-    let scannerActive = false;
     let keyBuffer = '';
     let keyTimer = null;
     let globalKeyHandler = null;
 
+    // Text-to-speech using Web Speech API
+    function speak(text) {
+        try {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.1;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        } catch (e) {
+            // Speech not available — silent fallback
+        }
+    }
+
+    // Beep sound using Web Audio API — plays on every successful camera scan
+    let audioCtx = null;
+    function beep(frequency = 1800, duration = 150, volume = 0.3) {
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'square';
+            osc.frequency.value = frequency;
+            gain.gain.value = volume;
+            osc.start();
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000);
+            osc.stop(audioCtx.currentTime + duration / 1000);
+        } catch (e) {
+            // Audio not available — silent fallback
+        }
+    }
+
+    // Request high-resolution camera with continuous autofocus and zoom
+    function getCameraConstraints(facingMode) {
+        const constraints = {
+            facingMode: facingMode,
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+        };
+        // Request continuous autofocus and max zoom if supported
+        if (navigator.mediaDevices && 'getSupportedConstraints' in navigator.mediaDevices) {
+            const supported = navigator.mediaDevices.getSupportedConstraints();
+            if (supported.focusMode) {
+                constraints.advanced = [{ focusMode: 'continuous' }];
+            }
+        }
+        return constraints;
+    }
+
+    // After camera starts, try to apply zoom and focus for better barcode reading
+    // Delayed slightly to ensure the video track is fully initialized
+    function applyAdvancedCameraSettings() {
+        setTimeout(async () => {
+            try {
+                const videoEl = document.querySelector('video');
+                if (!videoEl || !videoEl.srcObject) return;
+                const track = videoEl.srcObject.getVideoTracks()[0];
+                if (!track) return;
+                const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+                const settings = {};
+                if (capabilities.zoom) {
+                    settings.zoom = Math.min(2.0, capabilities.zoom.max || 1);
+                }
+                if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+                    settings.focusMode = 'continuous';
+                }
+                if (Object.keys(settings).length > 0) {
+                    await track.applyConstraints({ advanced: [settings] });
+                    console.log('Applied camera settings:', settings);
+                }
+            } catch (e) {
+                // Advanced settings not supported — no problem
+            }
+        }, 1000);
+    }
+
     // USB Scanner Detection (keyboard emulation)
-    // USB scanners type characters very fast and end with Enter
+    // USB scanners type characters very fast (5-20ms per char).
+    // Some scanners append Enter/CR after the barcode, some don't.
+    // We handle both:
+    //   1. Enter key with buffered chars → submit immediately
+    //   2. No Enter, but rapid chars stop arriving for 80ms → submit (debounce)
+    // Human typing is much slower (~100-300ms/char) and won't trigger the debounce.
+    const SCAN_DEBOUNCE_MS = 80;  // gap after last char to auto-submit
+    const MIN_SCAN_LENGTH = 3;    // minimum chars to consider a valid scan
+
     function startKeyboardListener(callback) {
         stopKeyboardListener();
         scanCallback = callback;
         globalKeyHandler = (e) => {
-            // Only capture when an input with class 'scan-target' is focused or no input focused
+            // Only capture when an input with class 'scan-target' is focused
             const active = document.activeElement;
             const isScanInput = active && active.classList.contains('scan-target');
 
             if (!isScanInput) return;
 
-            if (e.key === 'Enter' && keyBuffer.length > 2) {
+            // Enter key with buffered chars → submit immediately
+            if (e.key === 'Enter' && keyBuffer.length >= MIN_SCAN_LENGTH) {
                 e.preventDefault();
+                clearTimeout(keyTimer);
                 const scanned = keyBuffer.trim();
                 keyBuffer = '';
                 if (scanCallback) scanCallback(scanned);
-                // Clear the input field
                 if (active && active.tagName === 'INPUT') {
                     active.value = '';
                 }
                 return;
             }
 
+            // Enter with no/short buffer → ignore (normal keyboard Enter)
+            if (e.key === 'Enter') return;
+
+            // Accumulate printable characters
             if (e.key.length === 1) {
                 keyBuffer += e.key;
                 clearTimeout(keyTimer);
-                keyTimer = setTimeout(() => { keyBuffer = ''; }, 200);
+                // Auto-submit after a short gap (handles scanners without Enter)
+                keyTimer = setTimeout(() => {
+                    if (keyBuffer.length >= MIN_SCAN_LENGTH) {
+                        const scanned = keyBuffer.trim();
+                        keyBuffer = '';
+                        if (scanCallback) scanCallback(scanned);
+                        // Clear the input field
+                        const el = document.activeElement;
+                        if (el && el.tagName === 'INPUT' && el.classList.contains('scan-target')) {
+                            el.value = '';
+                        }
+                    } else {
+                        keyBuffer = '';
+                    }
+                }, SCAN_DEBOUNCE_MS);
             }
         };
         document.addEventListener('keydown', globalKeyHandler, true);
@@ -52,103 +159,125 @@ const Scanner = (() => {
         scanCallback = null;
     }
 
-    // Camera Scanner
+    // Camera Scanner using html5-qrcode
     async function startCamera(callback) {
-        scanCallback = callback;
+        if (typeof Html5Qrcode === 'undefined') {
+            throw new Error('Camera scanner library not loaded. Please check your internet connection and reload.');
+        }
+
         const overlay = document.getElementById('scanner-overlay');
-        const video = document.getElementById('scanner-video');
         overlay.classList.remove('hidden');
 
-        try {
-            cameraStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-            });
-            video.srcObject = cameraStream;
-            scannerActive = true;
+        // Clear any previous scanner instance
+        const readerEl = document.getElementById('scanner-reader');
+        readerEl.innerHTML = '';
 
-            // Try to use ZXing for decoding
-            if (typeof ZXingBrowser !== 'undefined' || typeof ZXing !== 'undefined') {
-                startZXingDecoding(video, callback);
-            } else {
-                // Fallback: manual frame analysis not available, show message
-                console.warn('ZXing library not loaded. Camera scanning requires manual code entry.');
-            }
-        } catch (err) {
-            console.error('Camera access error:', err);
+        const supportedFormats = [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.CODE_93,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.ITF,
+            Html5QrcodeSupportedFormats.PDF_417,
+            Html5QrcodeSupportedFormats.DATA_MATRIX,
+            Html5QrcodeSupportedFormats.CODABAR
+        ];
+
+        const scanConfig = {
+            fps: 20,
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+                // Large scan region — 90% width, 70% height
+                return {
+                    width: Math.max(Math.floor(viewfinderWidth * 0.9), 250),
+                    height: Math.max(Math.floor(viewfinderHeight * 0.7), 150)
+                };
+            },
+            aspectRatio: 1.333,
+            disableFlip: false,
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+        };
+
+        const onSuccess = (decodedText, decodedResult) => {
+            console.log('Scanned:', decodedText, decodedResult?.result?.format?.formatName);
+            beep();
+            callback(decodedText);
             stopCamera();
-            throw new Error('Could not access camera. Please check permissions or use a USB scanner.');
-        }
-    }
+        };
 
-    function startZXingDecoding(video, callback) {
-        const BrowserReader = (typeof ZXingBrowser !== 'undefined')
-            ? ZXingBrowser
-            : (typeof ZXing !== 'undefined' ? ZXing : null);
-
-        if (!BrowserReader) return;
+        const onFailure = (errorMessage) => {
+            // No code found in this frame — normal, ignore
+        };
 
         try {
-            // Try different ZXing API patterns
-            let reader;
-            if (BrowserReader.BrowserMultiFormatReader) {
-                reader = new BrowserReader.BrowserMultiFormatReader();
-            } else if (BrowserReader.BrowserQRCodeReader) {
-                reader = new BrowserReader.BrowserQRCodeReader();
-            } else {
-                console.warn('No compatible ZXing reader found');
-                return;
-            }
+            html5Scanner = new Html5Qrcode('scanner-reader', {
+                formatsToSupport: supportedFormats,
+                verbose: false
+            });
 
-            const decodeLoop = () => {
-                if (!scannerActive) return;
-
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                try {
-                    if (reader.decodeFromCanvas) {
-                        const result = reader.decodeFromCanvas(canvas);
-                        if (result && result.text) {
-                            callback(result.text);
-                            stopCamera();
-                            return;
-                        }
-                    }
-                } catch (e) {
-                    // No code found in this frame, continue
+            await html5Scanner.start(
+                { facingMode: 'environment' },
+                scanConfig,
+                onSuccess,
+                onFailure
+            );
+            applyAdvancedCameraSettings();
+        } catch (err) {
+            console.error('Camera start error:', err);
+            // If environment camera fails, try user-facing camera
+            try {
+                if (html5Scanner) {
+                    try { await html5Scanner.stop(); } catch (e) {}
+                    try { html5Scanner.clear(); } catch (e) {}
                 }
-
-                if (scannerActive) {
-                    requestAnimationFrame(decodeLoop);
-                }
-            };
-
-            // Wait for video to be ready
-            video.addEventListener('loadeddata', () => {
-                setTimeout(decodeLoop, 500);
-            }, { once: true });
-
-            if (video.readyState >= 2) {
-                setTimeout(decodeLoop, 500);
+                readerEl.innerHTML = '';
+                html5Scanner = new Html5Qrcode('scanner-reader', {
+                    formatsToSupport: supportedFormats,
+                    verbose: false
+                });
+                await html5Scanner.start(
+                    { facingMode: 'user' },
+                    scanConfig,
+                    onSuccess,
+                    onFailure
+                );
+                applyAdvancedCameraSettings();
+            } catch (err2) {
+                console.error('Fallback camera error:', err2);
+                stopCamera();
+                throw new Error('Could not access any camera. Check permissions or use a USB scanner.');
             }
-        } catch (e) {
-            console.warn('ZXing initialization error:', e);
         }
     }
 
-    function stopCamera() {
-        scannerActive = false;
+    async function stopCamera() {
         const overlay = document.getElementById('scanner-overlay');
-        const video = document.getElementById('scanner-video');
 
-        if (cameraStream) {
-            cameraStream.getTracks().forEach(t => t.stop());
-            cameraStream = null;
+        if (html5Scanner) {
+            try {
+                // Html5QrcodeScannerState: NOT_STARTED=1, SCANNING=2, PAUSED=3
+                const state = html5Scanner.getState();
+                if (state === 2 || state === 3) {
+                    await html5Scanner.stop();
+                }
+            } catch (e) {
+                // Ignore stop errors
+            }
+            try {
+                html5Scanner.clear();
+            } catch (e) {
+                // Ignore clear errors
+            }
+            html5Scanner = null;
         }
-        if (video) video.srcObject = null;
+
+        // Also clear the reader element to remove any leftover video
+        const readerEl = document.getElementById('scanner-reader');
+        if (readerEl) readerEl.innerHTML = '';
+
         if (overlay) overlay.classList.add('hidden');
     }
 
@@ -200,6 +329,111 @@ const Scanner = (() => {
         }
     }
 
+    // Inline camera scanner — renders into a specific DOM element, stays open continuously
+    // Calls callback on each successful scan, with a cooldown to prevent duplicate reads
+    let inlineScanner = null;
+    let inlineCooldown = false;
+
+    async function startInlineCamera(elementId, callback, cooldownMs = 1500) {
+        if (typeof Html5Qrcode === 'undefined') {
+            throw new Error('Camera scanner library not loaded.');
+        }
+
+        await stopInlineCamera();
+
+        const el = document.getElementById(elementId);
+        if (!el) throw new Error('Scanner element not found: ' + elementId);
+        el.innerHTML = '';
+
+        const supportedFormats = [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.CODE_93,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.ITF,
+            Html5QrcodeSupportedFormats.PDF_417,
+            Html5QrcodeSupportedFormats.DATA_MATRIX,
+            Html5QrcodeSupportedFormats.CODABAR
+        ];
+
+        inlineScanner = new Html5Qrcode(elementId, {
+            formatsToSupport: supportedFormats,
+            verbose: false
+        });
+
+        const config = {
+            fps: 20,
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+                return {
+                    width: Math.max(Math.floor(viewfinderWidth * 0.9), 250),
+                    height: Math.max(Math.floor(viewfinderHeight * 0.7), 150)
+                };
+            },
+            aspectRatio: 1.333,
+            disableFlip: false,
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+        };
+
+        const onSuccess = (decodedText) => {
+            if (inlineCooldown) return;
+            inlineCooldown = true;
+            beep();
+            callback(decodedText);
+            setTimeout(() => { inlineCooldown = false; }, cooldownMs);
+        };
+
+        try {
+            await inlineScanner.start(
+                { facingMode: 'environment' },
+                config,
+                onSuccess,
+                () => {}
+            );
+            applyAdvancedCameraSettings();
+        } catch (err) {
+            // Fallback to user-facing camera
+            try {
+                if (inlineScanner) {
+                    try { await inlineScanner.stop(); } catch (e) {}
+                    try { inlineScanner.clear(); } catch (e) {}
+                }
+                el.innerHTML = '';
+                inlineScanner = new Html5Qrcode(elementId, {
+                    formatsToSupport: supportedFormats,
+                    verbose: false
+                });
+                await inlineScanner.start(
+                    { facingMode: 'user' },
+                    config,
+                    onSuccess,
+                    () => {}
+                );
+                applyAdvancedCameraSettings();
+            } catch (err2) {
+                await stopInlineCamera();
+                throw new Error('Could not access camera.');
+            }
+        }
+    }
+
+    async function stopInlineCamera() {
+        if (inlineScanner) {
+            try {
+                const state = inlineScanner.getState();
+                if (state === 2 || state === 3) {
+                    await inlineScanner.stop();
+                }
+            } catch (e) {}
+            try { inlineScanner.clear(); } catch (e) {}
+            inlineScanner = null;
+        }
+        inlineCooldown = false;
+    }
+
     // Init close button
     function init() {
         const closeBtn = document.getElementById('scanner-close');
@@ -213,9 +447,13 @@ const Scanner = (() => {
         stopKeyboardListener,
         startCamera,
         stopCamera,
+        startInlineCamera,
+        stopInlineCamera,
         generateQR,
         generateQRToCanvas,
         generateBarcode,
+        speak,
+        beep,
         init
     };
 })();

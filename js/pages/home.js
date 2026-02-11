@@ -1,10 +1,18 @@
 /**
- * Home Page - Dashboard overview with quick action buttons
+ * Home Page - Dashboard overview with quick action buttons and radio fleet strip
  */
 UI.registerPage('home', async (container) => {
     container.innerHTML = `
         <h2 class="page-title">Dashboard</h2>
         <div class="home-grid">
+            <button class="home-btn primary-action" data-nav="clerk-station" style="grid-column: span 2;">
+                <span class="icon">🖥️</span>
+                Clerk Station
+            </button>
+            <button class="home-btn primary-action" data-nav="quick-scan">
+                <span class="icon">⚡</span>
+                Quick Scan (Self-Service)
+            </button>
             <button class="home-btn primary-action" data-nav="checkout">
                 <span class="icon">📤</span>
                 Check Out Radio
@@ -37,6 +45,7 @@ UI.registerPage('home', async (container) => {
 
         <div id="home-stats-radios"></div>
         <div id="home-alerts"></div>
+        <div id="home-radio-fleet"></div>
         <div id="home-recent"></div>
     `;
 
@@ -111,6 +120,9 @@ UI.registerPage('home', async (container) => {
             document.getElementById('home-alerts').innerHTML = `<h3 class="page-subtitle">Alerts</h3>` + alerts.join('');
         }
 
+        // Radio Fleet Visual Strip
+        await renderRadioFleetStrip();
+
         // Recent transactions
         const transactions = await DB.getAll('transactions');
         const recent = transactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 8);
@@ -122,6 +134,7 @@ UI.registerPage('home', async (container) => {
                     <td><strong>${t.assetId}</strong></td>
                     <td>${t.type === 'checkout' ? '📤 Checkout' : '📥 Return'}</td>
                     <td>${t.technicianName || t.technicianId || '—'}</td>
+                    <td>${t.clerkName || '—'}</td>
                     <td>${t.condition ? UI.statusBadge(t.condition) : '—'}</td>
                 </tr>
             `).join('');
@@ -137,6 +150,7 @@ UI.registerPage('home', async (container) => {
                                     <th>Asset</th>
                                     <th>Action</th>
                                     <th>Technician</th>
+                                    <th>Clerk</th>
                                     <th>Condition</th>
                                 </tr>
                             </thead>
@@ -150,3 +164,55 @@ UI.registerPage('home', async (container) => {
         console.error('Home stats error:', e);
     }
 });
+
+async function renderRadioFleetStrip() {
+    const radios = await DB.getAll('radios');
+    if (radios.length === 0) {
+        document.getElementById('home-radio-fleet').innerHTML = '';
+        return;
+    }
+
+    const transactions = await DB.getAll('transactions');
+
+    // Build lookup: radioId -> last checkout tech name
+    const radioAssignees = {};
+    for (const radio of radios) {
+        if (radio.status === 'Checked Out') {
+            const lastCheckout = transactions
+                .filter(t => t.assetId === radio.id && t.type === 'checkout')
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+            if (lastCheckout) {
+                radioAssignees[radio.id] = lastCheckout.technicianName || lastCheckout.technicianId || '?';
+            }
+        }
+    }
+
+    // Sort: checked out first, then available, then others
+    const statusOrder = { 'Checked Out': 0, 'Available': 1, 'Maintenance': 2, 'Retired': 3, 'Lost': 4 };
+    const sorted = [...radios].sort((a, b) => (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5));
+
+    const cards = sorted.map(r => {
+        const isOut = r.status === 'Checked Out';
+        const isMaint = r.status === 'Maintenance';
+        const isRetired = r.status === 'Retired' || r.status === 'Lost';
+        const assignee = radioAssignees[r.id] || '';
+
+        let statusClass = 'fleet-available';
+        if (isOut) statusClass = 'fleet-checked-out';
+        else if (isMaint) statusClass = 'fleet-maintenance';
+        else if (isRetired) statusClass = 'fleet-retired';
+
+        return `
+            <div class="fleet-card ${statusClass}" title="${r.id} — ${r.status}${assignee ? ' — ' + assignee : ''}">
+                <div class="fleet-icon">📻</div>
+                <div class="fleet-label">${r.id}</div>
+                ${isOut ? `<div class="fleet-assignee">👤 ${assignee}</div>` : `<div class="fleet-status">${r.status}</div>`}
+            </div>
+        `;
+    }).join('');
+
+    document.getElementById('home-radio-fleet').innerHTML = `
+        <h3 class="page-subtitle">Radio Fleet</h3>
+        <div class="fleet-strip">${cards}</div>
+    `;
+}

@@ -50,11 +50,32 @@ function applyTheme(theme) {
         // Set default settings if not present
         const overdueHours = await DB.getSetting('overdueHoursThreshold');
         if (overdueHours === null) {
-            await DB.setSetting('overdueHoursThreshold', 12);
+            await DB.setSetting('overdueHoursThreshold', 15);
         }
         const batteryThreshold = await DB.getSetting('batteryServiceDayThreshold');
         if (batteryThreshold === null) {
             await DB.setSetting('batteryServiceDayThreshold', 365);
+        }
+
+        // Check if camera is available — warn only if it's actually blocked
+        if (window.location.protocol === 'file:' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                // Camera works — stop the test stream immediately
+                stream.getTracks().forEach(t => t.stop());
+            } catch (e) {
+                // Camera blocked on file:// — show helpful banner
+                const banner = document.createElement('div');
+                banner.id = 'file-protocol-banner';
+                banner.innerHTML = `
+                    <div style="background:var(--warning);color:#000;padding:0.6rem 1rem;text-align:center;font-size:0.85rem;font-weight:600;display:flex;align-items:center;justify-content:center;gap:0.75rem;flex-wrap:wrap;">
+                        <span>⚠️ Camera blocked by browser on file:// URLs.</span>
+                        <span style="font-weight:400;">Double-click <code style="background:rgba(0,0,0,0.15);padding:0.15rem 0.4rem;border-radius:3px;">start.bat</code> for camera support.</span>
+                        <button onclick="this.parentElement.parentElement.remove()" style="background:rgba(0,0,0,0.2);border:none;color:#000;padding:0.2rem 0.6rem;border-radius:3px;cursor:pointer;font-size:0.8rem;">✕ Dismiss</button>
+                    </div>
+                `;
+                document.body.insertBefore(banner, document.body.firstChild);
+            }
         }
 
         // Navigate to home

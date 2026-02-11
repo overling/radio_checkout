@@ -177,6 +177,7 @@ UI.registerPage('return', async (container) => {
 
             UI.toast(result.flagForSupervisor ? 'Radio returned — flagged for review' : 'Radio returned successfully!',
                      result.flagForSupervisor ? 'warning' : 'success');
+            Scanner.speak('Checked in');
         } catch (err) {
             UI.toast(err.message, 'error', 5000);
         }

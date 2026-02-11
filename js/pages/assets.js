@@ -126,9 +126,30 @@ async function renderRadiosTab() {
 
 function showAddRadioModal() {
     UI.showModal('Add Radio', `
+        <div class="card" style="padding:0.75rem 1rem; margin-bottom:1rem; background:var(--primary-light);">
+            <div style="font-weight:600; font-size:0.9rem; margin-bottom:0.5rem;">📋 Quick Label Generator</div>
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.5rem;">
+                Format: <code>[LOCATION]_[DEPT]_[NUMBER]</code> — e.g. WV_MAINT_01
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:end; flex-wrap:wrap;">
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:100px;">
+                    <label for="ar-loc" style="font-size:0.75rem;">Location</label>
+                    <input type="text" id="ar-loc" placeholder="WV" style="text-transform:uppercase; font-size:0.85rem; padding:0.4rem;">
+                </div>
+                <div class="form-group" style="margin-bottom:0; flex:1; min-width:100px;">
+                    <label for="ar-dept" style="font-size:0.75rem;">Department</label>
+                    <input type="text" id="ar-dept" placeholder="MAINT" style="text-transform:uppercase; font-size:0.85rem; padding:0.4rem;">
+                </div>
+                <div class="form-group" style="margin-bottom:0; width:70px;">
+                    <label for="ar-num" style="font-size:0.75rem;">Number</label>
+                    <input type="text" id="ar-num" placeholder="01" style="font-size:0.85rem; padding:0.4rem;">
+                </div>
+                <button class="btn btn-sm btn-primary" id="ar-gen-btn" style="height:32px;">Generate</button>
+            </div>
+        </div>
         <div class="form-group">
             <label for="ar-id">Radio ID *</label>
-            <input type="text" id="ar-id" placeholder="e.g. R-001" required>
+            <input type="text" id="ar-id" placeholder="e.g. WV_MAINT_01 or R-001" required>
         </div>
         <div class="form-row">
             <div class="form-group">
@@ -152,6 +173,20 @@ function showAddRadioModal() {
         <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
         <button class="btn btn-primary" id="ar-save-btn">Save Radio</button>
     `);
+
+    // Label generator
+    document.getElementById('ar-gen-btn').addEventListener('click', () => {
+        const loc = document.getElementById('ar-loc').value.trim().toUpperCase();
+        const dept = document.getElementById('ar-dept').value.trim().toUpperCase();
+        const num = document.getElementById('ar-num').value.trim().padStart(2, '0');
+        if (!loc || !dept || !num) {
+            UI.toast('Fill in Location, Department, and Number', 'warning');
+            return;
+        }
+        const label = `${loc}_${dept}_${num}`;
+        document.getElementById('ar-id').value = label;
+        UI.toast(`Label generated: ${label}`, 'info');
+    });
 
     document.getElementById('ar-save-btn').addEventListener('click', async () => {
         const id = document.getElementById('ar-id').value.trim();

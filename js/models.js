@@ -343,7 +343,7 @@ const Models = (() => {
     async function getRadioStats() {
         const radios = await DB.getAll('radios');
         const transactions = await DB.getAll('transactions');
-        const overdueHours = await DB.getSetting('overdueHoursThreshold', 12);
+        const overdueHours = await DB.getSetting('overdueHoursThreshold', 15);
 
         // Find currently checked out radios with their checkout time
         const checkedOut = radios.filter(r => r.status === 'Checked Out');
