@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radio & Asset Inventory Management</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📻</text></svg>">
+    <link rel="stylesheet" href="css/styles.css">
+    <!-- SheetJS for Excel export (CDN with local fallback) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- QR Code generator -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <!-- JsBarcode for Code 128 -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <!-- ZXing for camera scanning -->
+    <script src="https://unpkg.com/@aspect-build/aspect-zxing-browser@0.0.1/dist/zxing-browser.min.js"
+        onerror="console.warn('ZXing CDN failed, camera scanning will use fallback')"></script>
+    <script>
+        // Fallback: if ZXing didn't load, camera scanning gracefully degrades
+        window.addEventListener('load', function() {
+            if (typeof ZXingBrowser === 'undefined' && typeof ZXing === 'undefined') {
+                console.info('ZXing not available. Camera scanning disabled; USB scanner and manual entry still work.');
+            }
+        });
+    </script>
+</head>
+<body>
+    <header id="app-header">
+        <div class="header-left">
+            <h1>📻 Asset Tracker</h1>
+        </div>
+        <div class="header-right">
+            <span id="header-clock"></span>
+            <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode">🌙</button>
+            <span id="header-clerk" class="clerk-badge" title="Click to change clerk name"></span>
+        </div>
+    </header>
+
+    <nav id="main-nav">
+        <button class="nav-btn active" data-page="home">🏠 Home</button>
+        <button class="nav-btn" data-page="checkout">📤 Check Out</button>
+        <button class="nav-btn" data-page="return">📥 Return</button>
+        <button class="nav-btn" data-page="assets">📦 Assets</button>
+        <button class="nav-btn" data-page="battery-dashboard">🔋 Batteries</button>
+        <button class="nav-btn" data-page="supervisor">📊 Supervisor</button>
+        <button class="nav-btn" data-page="print-codes">🏷️ Print Codes</button>
+        <button class="nav-btn" data-page="export">💾 Export</button>
+    </nav>
+
+    <main id="app-content">
+        <!-- Pages injected by JS -->
+    </main>
+
+    <!-- Modal overlay -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div id="modal-container" class="modal-container">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <button id="modal-close" class="modal-close-btn">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body"></div>
+            <div id="modal-footer" class="modal-footer"></div>
+        </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Camera scanner overlay -->
+    <div id="scanner-overlay" class="scanner-overlay hidden">
+        <div class="scanner-header">
+            <h3>Scan Code</h3>
+            <button id="scanner-close" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="scanner-viewport">
+            <video id="scanner-video" autoplay playsinline></video>
+            <div class="scanner-crosshair"></div>
+        </div>
+        <p class="scanner-hint">Point camera at QR code or barcode</p>
+    </div>
+
+    <!-- Scripts (order matters) -->
+    <script src="js/db.js"></script>
+    <script src="js/models.js"></script>
+    <script src="js/scanner.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/pages/home.js"></script>
+    <script src="js/pages/checkout.js"></script>
+    <script src="js/pages/return.js"></script>
+    <script src="js/pages/assets.js"></script>
+    <script src="js/pages/battery-dashboard.js"></script>
+    <script src="js/pages/supervisor.js"></script>
+    <script src="js/pages/print-codes.js"></script>
+    <script src="js/pages/export.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
