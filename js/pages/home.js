@@ -3,7 +3,6 @@
  */
 UI.registerPage('home', async (container) => {
     container.innerHTML = `
-        <h2 class="page-title">Dashboard</h2>
         <div class="home-grid">
             <button class="home-btn primary-action" data-nav="clerk-station" style="grid-column: span 2;">
                 <span class="icon">🖥️</span>
@@ -173,46 +172,102 @@ async function renderRadioFleetStrip() {
     }
 
     const transactions = await DB.getAll('transactions');
+    const technicians = await DB.getAll('technicians');
+    const overdueHours = await DB.getSetting('overdueHoursThreshold', 15);
 
-    // Build lookup: radioId -> last checkout tech name
-    const radioAssignees = {};
+    // Build tech lookup by badgeId
+    const techLookup = {};
+    for (const t of technicians) {
+        techLookup[t.badgeId || t.id] = t;
+    }
+
+    // Build lookup: radioId -> checkout details
+    const radioCheckoutInfo = {};
     for (const radio of radios) {
         if (radio.status === 'Checked Out') {
             const lastCheckout = transactions
                 .filter(t => t.assetId === radio.id && t.type === 'checkout')
                 .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
             if (lastCheckout) {
-                radioAssignees[radio.id] = lastCheckout.technicianName || lastCheckout.technicianId || '?';
+                const tech = techLookup[lastCheckout.technicianId];
+                const techName = tech ? (tech.name || tech.badgeId) : (lastCheckout.technicianName || lastCheckout.technicianId || '?');
+                const hoursOut = (Date.now() - new Date(lastCheckout.timestamp).getTime()) / (1000 * 60 * 60);
+                radioCheckoutInfo[radio.id] = {
+                    techName,
+                    techBadge: lastCheckout.technicianId || '',
+                    clerk: lastCheckout.clerkName || '',
+                    checkoutTime: lastCheckout.timestamp,
+                    hoursOut: Math.round(hoursOut * 10) / 10,
+                    isOverdue: hoursOut > overdueHours
+                };
             }
         }
     }
 
-    // Sort: checked out first, then available, then others
-    const statusOrder = { 'Checked Out': 0, 'Available': 1, 'Maintenance': 2, 'Retired': 3, 'Lost': 4 };
-    const sorted = [...radios].sort((a, b) => (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5));
+    // Sort: overdue first, then checked out, then available, then others
+    const sorted = [...radios].sort((a, b) => {
+        const aInfo = radioCheckoutInfo[a.id];
+        const bInfo = radioCheckoutInfo[b.id];
+        const aOverdue = aInfo && aInfo.isOverdue ? -1 : 0;
+        const bOverdue = bInfo && bInfo.isOverdue ? -1 : 0;
+        if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+        const statusOrder = { 'Checked Out': 0, 'Available': 1, 'Maintenance': 2, 'Retired': 3, 'Lost': 4 };
+        return (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
+    });
 
     const cards = sorted.map(r => {
         const isOut = r.status === 'Checked Out';
         const isMaint = r.status === 'Maintenance';
         const isRetired = r.status === 'Retired' || r.status === 'Lost';
-        const assignee = radioAssignees[r.id] || '';
+        const info = radioCheckoutInfo[r.id];
 
         let statusClass = 'fleet-available';
-        if (isOut) statusClass = 'fleet-checked-out';
+        if (isOut && info && info.isOverdue) statusClass = 'fleet-overdue';
+        else if (isOut) statusClass = 'fleet-checked-out';
         else if (isMaint) statusClass = 'fleet-maintenance';
         else if (isRetired) statusClass = 'fleet-retired';
 
+        // Short display name for the card face
+        let shortName = '';
+        if (isOut && info) {
+            const parts = info.techName.split(' ');
+            shortName = parts.length > 1
+                ? parts[0][0] + '.' + parts[parts.length - 1]
+                : info.techName;
+            if (shortName.length > 10) shortName = shortName.substring(0, 9) + '…';
+        }
+
+        // Build tooltip content
+        let tooltipLines = [`<strong>${r.id}</strong>`];
+        if (r.model) tooltipLines.push(`Model: ${r.model}`);
+        if (r.serialNumber) tooltipLines.push(`S/N: ${r.serialNumber}`);
+        tooltipLines.push(`Status: ${r.status}`);
+        if (isOut && info) {
+            tooltipLines.push(`Tech: ${info.techName}`);
+            if (info.techBadge && info.techBadge !== info.techName) tooltipLines.push(`Badge: ${info.techBadge}`);
+            tooltipLines.push(`Clerk: ${info.clerk}`);
+            tooltipLines.push(`Out: ${UI.formatDateTime(info.checkoutTime)}`);
+            tooltipLines.push(`Hours: ${info.hoursOut}h${info.isOverdue ? ' ⚠️ OVERDUE' : ''}`);
+        }
+        if (isMaint && r.maintenanceHistory && r.maintenanceHistory.length > 0) {
+            const last = r.maintenanceHistory[r.maintenanceHistory.length - 1];
+            tooltipLines.push(`Reason: ${last.reason}`);
+        }
+        if (r.checkoutCount) tooltipLines.push(`Total checkouts: ${r.checkoutCount}`);
+        const tooltip = tooltipLines.join('<br>');
+
         return `
-            <div class="fleet-card ${statusClass}" title="${r.id} — ${r.status}${assignee ? ' — ' + assignee : ''}">
+            <div class="fleet-card ${statusClass}">
+                <div class="fleet-tooltip">${tooltip}</div>
                 <div class="fleet-icon">📻</div>
                 <div class="fleet-label">${r.id}</div>
-                ${isOut ? `<div class="fleet-assignee">👤 ${assignee}</div>` : `<div class="fleet-status">${r.status}</div>`}
+                ${isOut ? `<div class="fleet-assignee">${shortName}</div>` : `<div class="fleet-status">${r.status}</div>`}
             </div>
         `;
     }).join('');
 
     document.getElementById('home-radio-fleet').innerHTML = `
-        <h3 class="page-subtitle">Radio Fleet</h3>
+        <h3 class="page-subtitle">Radio Fleet <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">(${radios.length} radios — hover for details)</span></h3>
         <div class="fleet-strip">${cards}</div>
     `;
 }

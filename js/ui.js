@@ -145,6 +145,66 @@ const UI = (() => {
         return window.confirm(message);
     }
 
+    // Prompt for new technician name (skippable) — returns updated tech or null if skipped
+    // Respects the 'promptNewTechName' DB setting — when off, silently skips
+    async function promptNewTechName(badgeId) {
+        const enabled = await DB.getSetting('promptNewTechName', true);
+        if (!enabled) return null;
+        return new Promise((resolve) => {
+            showModal('New Technician: ' + badgeId, `
+                <p style="margin-bottom:1rem; color:var(--text-secondary);">
+                    Badge <strong>${badgeId}</strong> was just auto-registered. Add a name now, or skip to do it later.
+                </p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="ptn-first">First Name</label>
+                        <input type="text" id="ptn-first" placeholder="First name" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="ptn-last">Last Name</label>
+                        <input type="text" id="ptn-last" placeholder="Last name" autocomplete="off">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="ptn-dept">Department</label>
+                    <input type="text" id="ptn-dept" placeholder="Optional" autocomplete="off">
+                </div>
+            `, `
+                <button class="btn btn-outline" id="ptn-skip-btn">Skip</button>
+                <button class="btn btn-primary" id="ptn-save-btn">Save Name</button>
+            `);
+
+            document.getElementById('ptn-first').focus();
+
+            document.getElementById('ptn-skip-btn').addEventListener('click', () => {
+                closeModal();
+                resolve(null);
+            });
+
+            document.getElementById('ptn-save-btn').addEventListener('click', async () => {
+                const firstName = document.getElementById('ptn-first').value.trim();
+                const lastName = document.getElementById('ptn-last').value.trim();
+                const dept = document.getElementById('ptn-dept').value.trim();
+                if (!firstName && !lastName) {
+                    closeModal();
+                    resolve(null);
+                    return;
+                }
+                const tech = await DB.get('technicians', badgeId);
+                if (tech) {
+                    tech.firstName = firstName;
+                    tech.lastName = lastName;
+                    tech.name = `${firstName} ${lastName}`.trim();
+                    if (dept) tech.department = dept;
+                    tech.updatedAt = new Date().toISOString();
+                    await DB.put('technicians', tech);
+                }
+                closeModal();
+                resolve(tech);
+            });
+        });
+    }
+
     // Debounce
     function debounce(fn, ms = 300) {
         let timer;
@@ -170,6 +230,7 @@ const UI = (() => {
         formatDateTime,
         el,
         confirm,
+        promptNewTechName,
         debounce,
         get currentPage() { return currentPage; }
     };

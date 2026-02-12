@@ -28,6 +28,7 @@ UI.registerPage('quick-scan', async (container) => {
     let cooldownTimers = {}; // radioId -> expiry timestamp
     let selfServiceCamera = false;
     let pageActive = true;
+    const promptNameSaved = await DB.getSetting('promptNewTechName', true);
 
     container.innerHTML = `
         <div class="qs-layout">
@@ -44,8 +45,13 @@ UI.registerPage('quick-scan', async (container) => {
                         📥 CHECK IN
                     </button>
                 </div>
-                <div class="qs-mode-hint">
-                    Press <kbd>Space</kbd> to cycle modes &nbsp;|&nbsp; Current: <strong id="qs-mode-label">🔄 AUTO DETECT</strong>
+                <div class="qs-mode-hint" style="display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:0.5rem;">
+                    <span>Press <kbd>Space</kbd> to cycle modes &nbsp;|&nbsp; Current: <strong id="qs-mode-label">🔄 AUTO DETECT</strong></span>
+                    <label style="display:flex; align-items:center; gap:0.3rem; cursor:pointer; font-size:0.8rem; color:var(--text-secondary); margin-left:1rem;">
+                        <input type="checkbox" id="qs-prompt-name" ${promptNameSaved ? 'checked' : ''}
+                               style="width:14px; height:14px; accent-color:var(--primary); cursor:pointer;">
+                        🪪 Prompt names
+                    </label>
                 </div>
 
                 <!-- Status banner -->
@@ -90,6 +96,11 @@ UI.registerPage('quick-scan', async (container) => {
             </div>
         </div>
     `;
+
+    // Persist prompt-for-name preference (shared across all scan pages)
+    document.getElementById('qs-prompt-name').addEventListener('change', async (e) => {
+        await DB.setSetting('promptNewTechName', e.target.checked);
+    });
 
     const input = document.getElementById('qs-input');
     const statusEl = document.getElementById('qs-status');
@@ -346,8 +357,13 @@ UI.registerPage('quick-scan', async (container) => {
             // Start cooldown so this radio can't be instantly returned
             startCooldown(pendingRadioId, 5);
 
-            // Unlock scanning, auto-reset after brief display
+            // Unlock scanning
             processing = false;
+
+            // Prompt for name if new technician, then auto-reset
+            if (result.techIsNew) {
+                await UI.promptNewTechName(badgeId);
+            }
             displayTimer = setTimeout(resetState, 2000);
         } catch (err) {
             setStatus('error', '❌', 'Checkout failed', err.message);

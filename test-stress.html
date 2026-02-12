@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stress Test — 30 Checkouts + 30 Returns Interleaved</title>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 1rem; font-size: 13px; }
+        h1 { color: #4CAF50; font-size: 1.2rem; }
+        .pass { color: #4CAF50; }
+        .fail { color: #f44336; }
+        .warn { color: #FFC107; }
+        .info { color: #2196F3; }
+        #log { white-space: pre-wrap; line-height: 1.6; }
+        .summary { background: #2d2d2d; padding: 1rem; margin: 1rem 0; border-radius: 4px; border-left: 4px solid #4CAF50; }
+        .summary.fail { border-left-color: #f44336; }
+        button { background: #4CAF50; color: white; border: none; padding: 0.5rem 1.5rem; cursor: pointer; font-size: 1rem; border-radius: 4px; margin: 0.5rem 0.5rem 0.5rem 0; }
+        button:hover { background: #45a049; }
+        button.danger { background: #f44336; }
+        button.danger:hover { background: #d32f2f; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Stress Test: 30 Checkouts + 30 Returns (Interleaved)</h1>
+    <p>Tests the full DB → Models pipeline with real IndexedDB operations.</p>
+    <button onclick="runAllTests()">▶ Run All Tests</button>
+    <button class="danger" onclick="cleanupTestData()">🗑 Clean Up Test Data</button>
+    <div id="log"></div>
+
+    <!-- Load the real app modules -->
+    <script src="js/db.js"></script>
+    <script src="js/models.js"></script>
+    <script>
+        const log = document.getElementById('log');
+        let passed = 0, failed = 0, warnings = 0;
+
+        function write(msg, cls = '') {
+            const span = document.createElement('span');
+            span.className = cls;
+            span.textContent = msg + '\n';
+            log.appendChild(span);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function assert(condition, label) {
+            if (condition) {
+                passed++;
+                write(`  ✅ PASS: ${label}`, 'pass');
+            } else {
+                failed++;
+                write(`  ❌ FAIL: ${label}`, 'fail');
+            }
+        }
+
+        function section(title) {
+            write(`\n${'═'.repeat(60)}`, 'info');
+            write(`  ${title}`, 'info');
+            write(`${'═'.repeat(60)}`, 'info');
+        }
+
+        async function cleanupTestData() {
+            await DB.open();
+            // Remove test radios, technicians, transactions, audit entries
+            const radios = await DB.getAll('radios');
+            const techs = await DB.getAll('technicians');
+            const txns = await DB.getAll('transactions');
+            const audits = await DB.getAll('auditLog');
+
+            let removed = 0;
+            for (const r of radios) {
+                if (r.id.startsWith('TEST_')) { await DB.remove('radios', r.id); removed++; }
+            }
+            for (const t of techs) {
+                if (t.id.startsWith('TBADGE_') || t.id.startsWith('RBADGE_')) { await DB.remove('technicians', t.id); removed++; }
+            }
+            for (const t of txns) {
+                if (t.assetId && t.assetId.startsWith('TEST_')) { await DB.remove('transactions', t.id); removed++; }
+            }
+            for (const a of audits) {
+                if (a.entityId && (a.entityId.startsWith('TEST_') || a.entityId.startsWith('TBADGE_') || a.entityId.startsWith('RBADGE_'))) {
+                    await DB.remove('auditLog', a.id); removed++;
+                }
+            }
+            write(`\n🗑 Cleaned up ${removed} test records.`, 'warn');
+        }
+
+        async function runAllTests() {
+            log.innerHTML = '';
+            passed = 0;
+            failed = 0;
+            warnings = 0;
+            const totalStart = performance.now();
+
+            try {
+                // ═══════════════════════════════════════════
+                // SETUP
+                // ═══════════════════════════════════════════
+                section('1. SETUP — Creating 60 test radios');
+                await DB.open();
+
+                // Clean any prior test data first
+                await cleanupTestData();
+
+                const CHECKOUT_COUNT = 30;
+                const RETURN_COUNT = 30;
+
+                // Create 30 radios for checkout (Available)
+                for (let i = 1; i <= CHECKOUT_COUNT; i++) {
+                    const id = `TEST_OUT_${String(i).padStart(2, '0')}`;
+                    const radio = Models.createRadio({ uniqueId: id, serialNumber: `SN-OUT-${i}`, model: 'XPR 7550e' });
+                    await DB.put('radios', radio);
+                }
+                write(`  Created ${CHECKOUT_COUNT} Available radios (TEST_OUT_01..30)`, 'info');
+
+                // Create 30 radios for return — need to check them out first
+                for (let i = 1; i <= RETURN_COUNT; i++) {
+                    const radioId = `TEST_IN_${String(i).padStart(2, '0')}`;
+                    const badgeId = `RBADGE_${String(i).padStart(3, '0')}`;
+                    const radio = Models.createRadio({ uniqueId: radioId, serialNumber: `SN-IN-${i}`, model: 'XPR 3500e' });
+                    await DB.put('radios', radio);
+                    // Check it out so we can return it
+                    await Models.checkoutRadio(radioId, badgeId, 'SetupClerk');
+                }
+                write(`  Created ${RETURN_COUNT} Checked Out radios (TEST_IN_01..30)`, 'info');
+
+                // Verify setup
+                let availCount = 0, checkedOutCount = 0;
+                for (let i = 1; i <= 30; i++) {
+                    const r1 = await DB.get('radios', `TEST_OUT_${String(i).padStart(2, '0')}`);
+                    if (r1 && r1.status === 'Available') availCount++;
+                    const r2 = await DB.get('radios', `TEST_IN_${String(i).padStart(2, '0')}`);
+                    if (r2 && r2.status === 'Checked Out') checkedOutCount++;
+                }
+                assert(availCount === 30, `All 30 checkout radios are Available (${availCount}/30)`);
+                assert(checkedOutCount === 30, `All 30 return radios are Checked Out (${checkedOutCount}/30)`);
+
+                // ═══════════════════════════════════════════
+                // TEST 2: Technician model — firstName/lastName
+                // ═══════════════════════════════════════════
+                section('2. TECHNICIAN MODEL — firstName/lastName fields');
+
+                const tech1 = Models.createTechnician({ badgeId: 'TBADGE_001', firstName: 'John', lastName: 'Doe', department: 'Maintenance' });
+                assert(tech1.firstName === 'John', 'firstName stored correctly');
+                assert(tech1.lastName === 'Doe', 'lastName stored correctly');
+                assert(tech1.name === 'John Doe', 'Full name auto-computed from first+last');
+                assert(tech1.department === 'Maintenance', 'Department stored');
+
+                const tech2 = Models.createTechnician({ badgeId: 'TBADGE_002', name: 'Jane Smith' });
+                assert(tech2.firstName === '', 'firstName empty when only name provided');
+                assert(tech2.name === 'Jane Smith', 'name fallback works');
+
+                const tech3 = Models.createTechnician({ badgeId: 'TBADGE_003' });
+                assert(tech3.name === '', 'Empty name when nothing provided');
+                assert(tech3.badgeId === 'TBADGE_003', 'Badge ID stored');
+
+                const tech4 = Models.createTechnician({ badgeId: 'TBADGE_004', firstName: 'Alice' });
+                assert(tech4.name === 'Alice', 'Name works with only firstName');
+
+                const tech5 = Models.createTechnician({ badgeId: 'TBADGE_005', lastName: 'Williams' });
+                assert(tech5.name === 'Williams', 'Name works with only lastName');
+
+                // ═══════════════════════════════════════════
+                // TEST 3: techIsNew flag
+                // ═══════════════════════════════════════════
+                section('3. techIsNew FLAG — Auto-creation detection');
+
+                // First checkout with a brand new badge
+                const newBadgeResult = await Models.checkoutRadio('TEST_OUT_01', 'TBADGE_001', 'TestClerk');
+                // TBADGE_001 was created above but NOT put in DB yet via Models.checkoutRadio
+                // Actually we need a truly new badge
+                const newBadgeRadio = Models.createRadio({ uniqueId: 'TEST_NEW_BADGE', model: 'Test' });
+                await DB.put('radios', newBadgeRadio);
+                const newResult = await Models.checkoutRadio('TEST_NEW_BADGE', 'TBADGE_BRAND_NEW', 'TestClerk');
+                assert(newResult.techIsNew === true, 'techIsNew=true for brand new badge');
+
+                // Return it so we can test again
+                await Models.returnRadio('TEST_NEW_BADGE', 'Good', 'TestClerk');
+
+                // Now checkout with the same badge (already exists)
+                const existRadio = Models.createRadio({ uniqueId: 'TEST_EXIST_BADGE', model: 'Test' });
+                await DB.put('radios', existRadio);
+                const existResult = await Models.checkoutRadio('TEST_EXIST_BADGE', 'TBADGE_BRAND_NEW', 'TestClerk');
+                assert(existResult.techIsNew === false, 'techIsNew=false for existing badge');
+
+                // Clean up extra test radios
+                await Models.returnRadio('TEST_OUT_01', 'Good', 'TestClerk');
+                // Re-checkout TEST_OUT_01 so it's available again for the stress test
+                // Actually returnRadio makes it Available, which is what we want
+
+                // Re-checkout TEST_OUT_01 is now Available again, good.
+
+                // ═══════════════════════════════════════════
+                // TEST 4: INTERLEAVED STRESS TEST
+                // ═══════════════════════════════════════════
+                section('4. STRESS TEST — 30 Checkouts + 30 Returns INTERLEAVED');
+                write('  Simulating shift change: technicians coming AND going simultaneously...', 'info');
+
+                // Build interleaved operation queue
+                // Pattern: checkout, return, checkout, return, ... with some bursts
+                const ops = [];
+                let coIdx = 1, retIdx = 1;
+
+                // Interleave: 2 checkouts, 1 return, 1 checkout, 2 returns, repeat
+                while (coIdx <= 30 || retIdx <= 30) {
+                    // 2 checkouts
+                    if (coIdx <= 30) ops.push({ type: 'checkout', idx: coIdx++ });
+                    if (coIdx <= 30) ops.push({ type: 'checkout', idx: coIdx++ });
+                    // 1 return
+                    if (retIdx <= 30) ops.push({ type: 'return', idx: retIdx++ });
+                    // 1 checkout
+                    if (coIdx <= 30) ops.push({ type: 'checkout', idx: coIdx++ });
+                    // 2 returns
+                    if (retIdx <= 30) ops.push({ type: 'return', idx: retIdx++ });
+                    if (retIdx <= 30) ops.push({ type: 'return', idx: retIdx++ });
+                }
+
+                write(`  Operation queue: ${ops.length} ops (${ops.filter(o=>o.type==='checkout').length} checkouts, ${ops.filter(o=>o.type==='return').length} returns)`, 'info');
+
+                let checkoutSuccesses = 0, returnSuccesses = 0, errors = 0;
+                const opTimes = [];
+                const stressStart = performance.now();
+
+                for (const op of ops) {
+                    const opStart = performance.now();
+                    try {
+                        if (op.type === 'checkout') {
+                            const radioId = `TEST_OUT_${String(op.idx).padStart(2, '0')}`;
+                            const badgeId = `TBADGE_${String(100 + op.idx).padStart(3, '0')}`;
+                            const result = await Models.checkoutRadio(radioId, badgeId, 'StressClerk');
+                            assert(result.radio.status === 'Checked Out', `Checkout #${op.idx}: ${radioId} → ${badgeId}`);
+                            assert(result.techIsNew === true, `Checkout #${op.idx}: new tech detected`);
+                            checkoutSuccesses++;
+                        } else {
+                            const radioId = `TEST_IN_${String(op.idx).padStart(2, '0')}`;
+                            const result = await Models.returnRadio(radioId, 'Good', 'StressClerk');
+                            assert(result.radio.status === 'Available', `Return #${op.idx}: ${radioId} → Available`);
+                            assert(result.flagForSupervisor === false, `Return #${op.idx}: no supervisor flag`);
+                            returnSuccesses++;
+                        }
+                    } catch (err) {
+                        errors++;
+                        write(`  ❌ ERROR in ${op.type} #${op.idx}: ${err.message}`, 'fail');
+                    }
+                    opTimes.push(performance.now() - opStart);
+                }
+
+                const stressEnd = performance.now();
+                const stressMs = stressEnd - stressStart;
+                const avgOp = opTimes.reduce((a, b) => a + b, 0) / opTimes.length;
+                const maxOp = Math.max(...opTimes);
+                const minOp = Math.min(...opTimes);
+
+                write('', '');
+                write(`  ⏱ Total stress test time: ${stressMs.toFixed(0)}ms for ${ops.length} operations`, 'info');
+                write(`  ⏱ Avg per operation: ${avgOp.toFixed(1)}ms | Min: ${minOp.toFixed(1)}ms | Max: ${maxOp.toFixed(1)}ms`, 'info');
+                write(`  ✅ Checkouts: ${checkoutSuccesses}/30 | Returns: ${returnSuccesses}/30 | Errors: ${errors}`, checkoutSuccesses === 30 && returnSuccesses === 30 ? 'pass' : 'fail');
+
+                assert(checkoutSuccesses === 30, 'All 30 checkouts succeeded');
+                assert(returnSuccesses === 30, 'All 30 returns succeeded');
+                assert(errors === 0, 'Zero errors during stress test');
+
+                // ═══════════════════════════════════════════
+                // TEST 5: VERIFY FINAL STATE
+                // ═══════════════════════════════════════════
+                section('5. VERIFY FINAL STATE');
+
+                // All checkout radios should be Checked Out
+                let finalCheckedOut = 0;
+                for (let i = 1; i <= 30; i++) {
+                    const r = await DB.get('radios', `TEST_OUT_${String(i).padStart(2, '0')}`);
+                    if (r && r.status === 'Checked Out') finalCheckedOut++;
+                }
+                // TEST_OUT_01 was returned earlier in test 3, so it should be Available
+                const r01 = await DB.get('radios', 'TEST_OUT_01');
+                write(`  TEST_OUT_01 status: ${r01.status} (was returned in test 3, re-checked-out in stress)`, 'info');
+                assert(finalCheckedOut === 30, `All 30 checkout radios now Checked Out (${finalCheckedOut}/30)`);
+
+                // All return radios should be Available
+                let finalAvailable = 0;
+                for (let i = 1; i <= 30; i++) {
+                    const r = await DB.get('radios', `TEST_IN_${String(i).padStart(2, '0')}`);
+                    if (r && r.status === 'Available') finalAvailable++;
+                }
+                assert(finalAvailable === 30, `All 30 return radios now Available (${finalAvailable}/30)`);
+
+                // Verify technicians were created with correct fields
+                let techsWithBadge = 0, techsWithNewFlag = 0;
+                for (let i = 1; i <= 30; i++) {
+                    const badgeId = `TBADGE_${String(100 + i).padStart(3, '0')}`;
+                    const tech = await DB.get('technicians', badgeId);
+                    if (tech) {
+                        techsWithBadge++;
+                        if (tech.firstName !== undefined && tech.lastName !== undefined) techsWithNewFlag++;
+                    }
+                }
+                assert(techsWithBadge === 30, `All 30 new technicians created (${techsWithBadge}/30)`);
+                assert(techsWithNewFlag === 30, `All 30 technicians have firstName/lastName fields (${techsWithNewFlag}/30)`);
+
+                // Verify transaction counts
+                const allTxns = await DB.getAll('transactions');
+                const testCheckoutTxns = allTxns.filter(t => t.assetId && t.assetId.startsWith('TEST_') && t.type === 'checkout');
+                const testReturnTxns = allTxns.filter(t => t.assetId && t.assetId.startsWith('TEST_') && t.type === 'return');
+                write(`  Transactions: ${testCheckoutTxns.length} checkouts, ${testReturnTxns.length} returns`, 'info');
+                // 30 setup checkouts + 30 stress checkouts + 2 from test 3 = 62 checkouts
+                // 30 stress returns + 2 from test 3 = 32 returns
+                assert(testCheckoutTxns.length >= 62, `Checkout transactions logged (${testCheckoutTxns.length} >= 62)`);
+                assert(testReturnTxns.length >= 32, `Return transactions logged (${testReturnTxns.length} >= 32)`);
+
+                // ═══════════════════════════════════════════
+                // TEST 6: DUPLICATE CHECKOUT PREVENTION
+                // ═══════════════════════════════════════════
+                section('6. DUPLICATE CHECKOUT PREVENTION');
+
+                // Try to checkout a radio that's already checked out
+                try {
+                    await Models.checkoutRadio('TEST_OUT_02', 'TBADGE_999', 'TestClerk');
+                    assert(false, 'Should have thrown — radio already checked out');
+                } catch (err) {
+                    assert(err.message.includes('not available'), `Blocked: ${err.message}`);
+                }
+
+                // Try to checkout when tech already has a radio
+                try {
+                    const extraRadio = Models.createRadio({ uniqueId: 'TEST_EXTRA', model: 'Test' });
+                    await DB.put('radios', extraRadio);
+                    await Models.checkoutRadio('TEST_EXTRA', 'TBADGE_101', 'TestClerk');
+                    assert(false, 'Should have thrown — tech already has radio checked out');
+                } catch (err) {
+                    assert(err.message.includes('already has radio'), `Blocked: ${err.message}`);
+                }
+
+                // ═══════════════════════════════════════════
+                // TEST 7: RETURN VALIDATION
+                // ═══════════════════════════════════════════
+                section('7. RETURN VALIDATION');
+
+                // Try to return a radio that's already available
+                try {
+                    await Models.returnRadio('TEST_IN_01', 'Good', 'TestClerk');
+                    assert(false, 'Should have thrown — radio already available');
+                } catch (err) {
+                    assert(err.message.includes('not checked out'), `Blocked: ${err.message}`);
+                }
+
+                // Try to return a non-existent radio
+                try {
+                    await Models.returnRadio('NONEXISTENT_RADIO', 'Good', 'TestClerk');
+                    assert(false, 'Should have thrown — radio not found');
+                } catch (err) {
+                    assert(err.message.includes('not found'), `Blocked: ${err.message}`);
+                }
+
+                // ═══════════════════════════════════════════
+                // TEST 8: DAMAGED RETURN (supervisor flag)
+                // ═══════════════════════════════════════════
+                section('8. DAMAGED RETURN — Supervisor flag');
+
+                const dmgResult = await Models.returnRadio('TEST_OUT_02', 'Damaged', 'TestClerk', 'Screen cracked');
+                assert(dmgResult.flagForSupervisor === true, 'Damaged return flags supervisor');
+                assert(dmgResult.radio.status === 'Maintenance', 'Damaged radio moved to Maintenance');
+                const dmgRadio = await DB.get('radios', 'TEST_OUT_02');
+                assert(dmgRadio.repairCount === 1, 'Repair count incremented');
+                assert(dmgRadio.maintenanceHistory.length === 1, 'Maintenance history entry added');
+
+                // ═══════════════════════════════════════════
+                // TEST 9: PROMPT TOGGLE SETTING
+                // ═══════════════════════════════════════════
+                section('9. PROMPT TOGGLE — DB Setting');
+
+                // Default should be true
+                const defaultPrompt = await DB.getSetting('promptNewTechName', true);
+                assert(defaultPrompt === true, 'Default promptNewTechName is true');
+
+                // Set to false
+                await DB.setSetting('promptNewTechName', false);
+                const disabledPrompt = await DB.getSetting('promptNewTechName', true);
+                assert(disabledPrompt === false, 'promptNewTechName can be set to false');
+
+                // Set back to true
+                await DB.setSetting('promptNewTechName', true);
+                const reenabledPrompt = await DB.getSetting('promptNewTechName', true);
+                assert(reenabledPrompt === true, 'promptNewTechName can be re-enabled');
+
+                // ═══════════════════════════════════════════
+                // TEST 10: RAPID-FIRE SEQUENTIAL (no await batching)
+                // ═══════════════════════════════════════════
+                section('10. RAPID-FIRE — 10 returns as fast as possible');
+
+                const rapidStart = performance.now();
+                const rapidResults = [];
+                for (let i = 3; i <= 12; i++) {
+                    const radioId = `TEST_OUT_${String(i).padStart(2, '0')}`;
+                    try {
+                        const r = await Models.returnRadio(radioId, 'Good', 'RapidClerk');
+                        rapidResults.push({ radioId, success: true, status: r.radio.status });
+                    } catch (err) {
+                        rapidResults.push({ radioId, success: false, error: err.message });
+                    }
+                }
+                const rapidMs = performance.now() - rapidStart;
+                const rapidSuccesses = rapidResults.filter(r => r.success).length;
+                assert(rapidSuccesses === 10, `Rapid-fire: ${rapidSuccesses}/10 returns succeeded`);
+                write(`  ⏱ 10 rapid returns in ${rapidMs.toFixed(0)}ms (${(rapidMs/10).toFixed(1)}ms avg)`, 'info');
+
+                // ═══════════════════════════════════════════
+                // TEST 11: getRadioStats and getRadioCheckoutInfo
+                // ═══════════════════════════════════════════
+                section('11. STATS & CHECKOUT INFO');
+
+                const stats = await Models.getRadioStats();
+                write(`  Radio stats: ${stats.total} total, ${stats.available} available, ${stats.checkedOut} checked out, ${stats.maintenance} maintenance`, 'info');
+                assert(stats.total > 0, 'Stats returns total > 0');
+
+                // Check checkout info for a still-checked-out radio
+                const coInfo = await Models.getRadioCheckoutInfo('TEST_OUT_13');
+                assert(coInfo !== null, 'getRadioCheckoutInfo returns data for checked-out radio');
+                assert(coInfo.type === 'checkout', 'Checkout info type is checkout');
+                assert(coInfo.clerkName === 'StressClerk', 'Clerk name recorded correctly');
+
+            } catch (err) {
+                write(`\n💥 UNEXPECTED ERROR: ${err.message}\n${err.stack}`, 'fail');
+                failed++;
+            }
+
+            // ═══════════════════════════════════════════
+            // SUMMARY
+            // ═══════════════════════════════════════════
+            const totalMs = performance.now() - totalStart;
+            const allPassed = failed === 0;
+
+            write('', '');
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'summary' + (allPassed ? '' : ' fail');
+            summaryDiv.innerHTML = `
+                <strong>${allPassed ? '🎉 ALL TESTS PASSED' : '⚠️ SOME TESTS FAILED'}</strong><br>
+                ✅ Passed: ${passed} | ❌ Failed: ${failed}<br>
+                ⏱ Total time: ${totalMs.toFixed(0)}ms<br>
+                📊 ${passed + failed} total assertions
+            `;
+            log.appendChild(summaryDiv);
+        }
+    </script>
+</body>
+</html>

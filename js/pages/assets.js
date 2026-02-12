@@ -798,6 +798,7 @@ async function renderTechniciansTab() {
     tab.innerHTML = `
         <div class="filter-bar">
             <input type="text" id="tech-search" placeholder="Search technicians...">
+            <button class="btn btn-outline" id="import-techs-btn">📥 Import from Excel</button>
             <button class="btn btn-primary" id="add-tech-btn">+ Add Technician</button>
         </div>
         <div class="table-wrapper">
@@ -805,7 +806,8 @@ async function renderTechniciansTab() {
                 <thead>
                     <tr>
                         <th>Badge ID</th>
-                        <th>Name</th>
+                        <th>First Name</th>
+                        <th>Last Name</th>
                         <th>Department</th>
                         <th>Added</th>
                         <th>Actions</th>
@@ -821,15 +823,18 @@ async function renderTechniciansTab() {
             return !filter ||
                 t.badgeId.toLowerCase().includes(filter) ||
                 (t.name || '').toLowerCase().includes(filter) ||
+                (t.firstName || '').toLowerCase().includes(filter) ||
+                (t.lastName || '').toLowerCase().includes(filter) ||
                 (t.department || '').toLowerCase().includes(filter);
         });
 
         document.getElementById('techs-tbody').innerHTML = filtered.length === 0
-            ? '<tr><td colspan="5" class="empty-state">No technicians found</td></tr>'
+            ? '<tr><td colspan="6" class="empty-state">No technicians found</td></tr>'
             : filtered.map(t => `
                 <tr>
                     <td><strong>${t.badgeId}</strong></td>
-                    <td>${t.name || '—'}</td>
+                    <td>${t.firstName || '—'}</td>
+                    <td>${t.lastName || '—'}</td>
                     <td>${t.department || '—'}</td>
                     <td>${UI.formatDate(t.createdAt)}</td>
                     <td>
@@ -847,9 +852,15 @@ async function renderTechniciansTab() {
                         <label>Badge ID</label>
                         <input type="text" value="${tech.badgeId}" disabled>
                     </div>
-                    <div class="form-group">
-                        <label for="et2-name">Name</label>
-                        <input type="text" id="et2-name" value="${tech.name || ''}">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="et2-first">First Name</label>
+                            <input type="text" id="et2-first" value="${tech.firstName || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="et2-last">Last Name</label>
+                            <input type="text" id="et2-last" value="${tech.lastName || ''}">
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="et2-dept">Department</label>
@@ -861,7 +872,9 @@ async function renderTechniciansTab() {
                 `);
 
                 document.getElementById('et2-save-btn').addEventListener('click', async () => {
-                    tech.name = document.getElementById('et2-name').value.trim();
+                    tech.firstName = document.getElementById('et2-first').value.trim();
+                    tech.lastName = document.getElementById('et2-last').value.trim();
+                    tech.name = `${tech.firstName} ${tech.lastName}`.trim();
                     tech.department = document.getElementById('et2-dept').value.trim();
                     tech.updatedAt = Models.now();
                     await DB.put('technicians', tech);
@@ -885,9 +898,15 @@ async function renderTechniciansTab() {
                 <label for="at2-badge">Badge ID *</label>
                 <input type="text" id="at2-badge" required>
             </div>
-            <div class="form-group">
-                <label for="at2-name">Name *</label>
-                <input type="text" id="at2-name" required>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="at2-first">First Name</label>
+                    <input type="text" id="at2-first" placeholder="First name">
+                </div>
+                <div class="form-group">
+                    <label for="at2-last">Last Name</label>
+                    <input type="text" id="at2-last" placeholder="Last name">
+                </div>
             </div>
             <div class="form-group">
                 <label for="at2-dept">Department</label>
@@ -900,20 +919,208 @@ async function renderTechniciansTab() {
 
         document.getElementById('at2-save-btn').addEventListener('click', async () => {
             const badge = document.getElementById('at2-badge').value.trim();
-            const name = document.getElementById('at2-name').value.trim();
-            if (!badge || !name) { UI.toast('Badge ID and Name are required', 'error'); return; }
+            if (!badge) { UI.toast('Badge ID is required', 'error'); return; }
 
             const existing = await DB.get('technicians', badge);
             if (existing) { UI.toast('A technician with this badge ID already exists', 'error'); return; }
 
             const tech = Models.createTechnician({
                 badgeId: badge,
-                name: name,
+                firstName: document.getElementById('at2-first').value.trim(),
+                lastName: document.getElementById('at2-last').value.trim(),
                 department: document.getElementById('at2-dept').value.trim()
             });
             await DB.put('technicians', tech);
             UI.closeModal();
             UI.toast('Technician added', 'success');
+            UI.navigateTo('assets');
+        });
+    });
+
+    // ===== IMPORT FROM EXCEL =====
+    document.getElementById('import-techs-btn').addEventListener('click', () => {
+        UI.showModal('Import Technicians from Excel', `
+            <p style="margin-bottom:1rem; color:var(--text-secondary); font-size:0.9rem;">
+                Upload an Excel file (.xlsx) containing technician data. You'll map the columns to the right fields.
+            </p>
+            <div class="form-group">
+                <label for="tech-import-file">Excel File</label>
+                <input type="file" id="tech-import-file" accept=".xlsx,.xls">
+            </div>
+            <div id="tech-import-preview" style="display:none;">
+                <hr style="margin:1rem 0; border-color:var(--border);">
+                <p style="font-weight:600; margin-bottom:0.75rem;">Map Columns</p>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">
+                    Select which column contains each field. Badge ID is required. Name fields are optional but recommended.
+                </p>
+                <div class="form-group">
+                    <label for="tech-col-badge">Badge ID Column *</label>
+                    <select id="tech-col-badge"><option value="">— Select —</option></select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="tech-col-first">First Name Column</label>
+                        <select id="tech-col-first"><option value="">— None —</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="tech-col-last">Last Name Column</label>
+                        <select id="tech-col-last"><option value="">— None —</option></select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="tech-col-fullname">Full Name Column</label>
+                        <select id="tech-col-fullname"><option value="">— None —</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="tech-col-dept">Department Column</label>
+                        <select id="tech-col-dept"><option value="">— None —</option></select>
+                    </div>
+                </div>
+                <p style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">
+                    Use <em>First + Last Name</em> columns OR a single <em>Full Name</em> column — not both.
+                </p>
+                <div id="tech-import-sample" style="margin-top:1rem;"></div>
+            </div>
+        `, `
+            <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
+            <button class="btn btn-primary" id="tech-import-go-btn" disabled>Import</button>
+        `);
+
+        let parsedRows = [];
+        let headers = [];
+
+        document.getElementById('tech-import-file').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+                if (json.length === 0) {
+                    UI.toast('No data found in the spreadsheet', 'error');
+                    return;
+                }
+
+                parsedRows = json;
+                headers = Object.keys(json[0]);
+
+                // Populate column selects
+                const selects = ['tech-col-badge', 'tech-col-first', 'tech-col-last', 'tech-col-fullname', 'tech-col-dept'];
+                selects.forEach(selId => {
+                    const sel = document.getElementById(selId);
+                    const firstOpt = sel.options[0].textContent;
+                    sel.innerHTML = `<option value="">${firstOpt}</option>` +
+                        headers.map(h => `<option value="${h}">${h}</option>`).join('');
+                });
+
+                // Auto-detect columns by common names
+                const autoMap = {
+                    'tech-col-badge': ['badge', 'badge id', 'badgeid', 'badge_id', 'badge number', 'id', 'employee id', 'emp id'],
+                    'tech-col-first': ['first', 'first name', 'firstname', 'first_name', 'fname'],
+                    'tech-col-last': ['last', 'last name', 'lastname', 'last_name', 'lname'],
+                    'tech-col-fullname': ['name', 'full name', 'fullname', 'full_name', 'employee name'],
+                    'tech-col-dept': ['department', 'dept', 'dept.', 'division', 'group', 'team']
+                };
+                for (const [selId, keywords] of Object.entries(autoMap)) {
+                    const sel = document.getElementById(selId);
+                    for (const h of headers) {
+                        if (keywords.includes(h.toLowerCase().trim())) {
+                            sel.value = h;
+                            break;
+                        }
+                    }
+                }
+
+                // Show preview
+                document.getElementById('tech-import-preview').style.display = 'block';
+                document.getElementById('tech-import-go-btn').disabled = false;
+
+                // Show sample rows
+                const sampleCount = Math.min(3, parsedRows.length);
+                let sampleHtml = `<p style="font-size:0.8rem; font-weight:600; margin-bottom:0.5rem;">Preview (${parsedRows.length} rows, showing first ${sampleCount}):</p>`;
+                sampleHtml += '<div class="table-wrapper" style="max-height:150px; overflow:auto;"><table style="font-size:0.75rem;"><thead><tr>';
+                headers.forEach(h => sampleHtml += `<th>${h}</th>`);
+                sampleHtml += '</tr></thead><tbody>';
+                for (let i = 0; i < sampleCount; i++) {
+                    sampleHtml += '<tr>';
+                    headers.forEach(h => sampleHtml += `<td>${parsedRows[i][h] || ''}</td>`);
+                    sampleHtml += '</tr>';
+                }
+                sampleHtml += '</tbody></table></div>';
+                document.getElementById('tech-import-sample').innerHTML = sampleHtml;
+
+            } catch (err) {
+                UI.toast('Error reading file: ' + err.message, 'error');
+            }
+        });
+
+        document.getElementById('tech-import-go-btn').addEventListener('click', async () => {
+            const badgeCol = document.getElementById('tech-col-badge').value;
+            const firstCol = document.getElementById('tech-col-first').value;
+            const lastCol = document.getElementById('tech-col-last').value;
+            const fullnameCol = document.getElementById('tech-col-fullname').value;
+            const deptCol = document.getElementById('tech-col-dept').value;
+
+            if (!badgeCol) {
+                UI.toast('Badge ID column is required', 'error');
+                return;
+            }
+
+            let imported = 0;
+            let skipped = 0;
+            let updated = 0;
+
+            for (const row of parsedRows) {
+                const badge = String(row[badgeCol] || '').trim();
+                if (!badge) { skipped++; continue; }
+
+                let firstName = '', lastName = '';
+                if (firstCol || lastCol) {
+                    firstName = String(row[firstCol] || '').trim();
+                    lastName = String(row[lastCol] || '').trim();
+                } else if (fullnameCol) {
+                    const parts = String(row[fullnameCol] || '').trim().split(/\s+/);
+                    firstName = parts[0] || '';
+                    lastName = parts.slice(1).join(' ') || '';
+                }
+
+                const dept = deptCol ? String(row[deptCol] || '').trim() : '';
+
+                const existing = await DB.get('technicians', badge);
+                if (existing) {
+                    // Update existing if they have no name set or name is just the badge ID
+                    if ((!existing.firstName && !existing.lastName) || existing.name === existing.badgeId) {
+                        if (firstName || lastName) {
+                            existing.firstName = firstName;
+                            existing.lastName = lastName;
+                            existing.name = `${firstName} ${lastName}`.trim();
+                        }
+                        if (dept) existing.department = dept;
+                        existing.updatedAt = Models.now();
+                        await DB.put('technicians', existing);
+                        updated++;
+                    } else {
+                        skipped++;
+                    }
+                    continue;
+                }
+
+                const tech = Models.createTechnician({
+                    badgeId: badge,
+                    firstName: firstName,
+                    lastName: lastName,
+                    department: dept
+                });
+                await DB.put('technicians', tech);
+                imported++;
+            }
+
+            UI.closeModal();
+            UI.toast(`Imported: ${imported} new, ${updated} updated, ${skipped} skipped`, 'success', 5000);
             UI.navigateTo('assets');
         });
     });

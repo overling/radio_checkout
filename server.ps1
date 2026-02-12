@@ -29,30 +29,51 @@ $mimeTypes = @{
     '.jpg'  = 'image/jpeg'
     '.ico'  = 'image/x-icon'
     '.md'   = 'text/plain; charset=utf-8'
+    '.xlsx' = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    '.zip'  = 'application/zip'
+    '.woff' = 'font/woff'
+    '.woff2'= 'font/woff2'
+    '.ttf'  = 'font/ttf'
 }
 
 try {
     while ($listener.IsListening) {
         $ctx = $listener.GetContext()
-        $path = $ctx.Request.Url.LocalPath
+        $req = $ctx.Request
+        $resp = $ctx.Response
+        $path = $req.Url.LocalPath
 
-        if ($path -eq '/') { $path = '/index.html' }
+        try {
+            if ($path -eq '/') { $path = '/index.html' }
 
-        $filePath = Join-Path $root ($path -replace '/', '\')
+            $filePath = Join-Path $root ($path -replace '/', '\')
 
-        if (Test-Path $filePath -PathType Leaf) {
-            $bytes = [System.IO.File]::ReadAllBytes($filePath)
-            $ext = [System.IO.Path]::GetExtension($filePath).ToLower()
-            $ctx.Response.ContentType = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { 'application/octet-stream' }
-            $ctx.Response.ContentLength64 = $bytes.Length
-            $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
-        } else {
-            $ctx.Response.StatusCode = 404
-            $msg = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found: $path")
-            $ctx.Response.OutputStream.Write($msg, 0, $msg.Length)
+            if (Test-Path $filePath -PathType Leaf) {
+                $bytes = [System.IO.File]::ReadAllBytes($filePath)
+                $ext = [System.IO.Path]::GetExtension($filePath).ToLower()
+                $resp.ContentType = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { 'application/octet-stream' }
+                $resp.StatusCode = 200
+                $resp.ContentLength64 = $bytes.Length
+                # Disable keep-alive to prevent Firefox connection issues
+                $resp.KeepAlive = $false
+                $resp.Headers.Add("Cache-Control", "no-cache")
+                $resp.Headers.Add("Connection", "close")
+                $resp.OutputStream.Write($bytes, 0, $bytes.Length)
+                $resp.OutputStream.Flush()
+            } else {
+                $resp.StatusCode = 404
+                $resp.KeepAlive = $false
+                $resp.Headers.Add("Connection", "close")
+                $msg = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found: $path")
+                $resp.ContentLength64 = $msg.Length
+                $resp.OutputStream.Write($msg, 0, $msg.Length)
+                $resp.OutputStream.Flush()
+            }
+        } catch {
+            Write-Host "  Error serving ${path}: $_" -ForegroundColor Red
+        } finally {
+            try { $resp.Close() } catch {}
         }
-
-        $ctx.Response.Close()
     }
 } finally {
     $listener.Stop()

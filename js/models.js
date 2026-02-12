@@ -71,11 +71,16 @@ const Models = (() => {
     }
 
     // ===== TECHNICIAN =====
-    function createTechnician({ badgeId, name, department = '' }) {
+    function createTechnician({ badgeId, firstName = '', lastName = '', name, department = '' }) {
+        const fullName = (firstName || lastName)
+            ? `${firstName} ${lastName}`.trim()
+            : (name || '');
         return {
             id: badgeId || generateId(),
             badgeId: badgeId || '',
-            name: name || '',
+            firstName: firstName || '',
+            lastName: lastName || '',
+            name: fullName,
             department: department,
             createdAt: now(),
             updatedAt: now()
@@ -125,6 +130,7 @@ const Models = (() => {
 
         // Get or create technician
         let technician = await DB.get('technicians', technicianBadgeId);
+        let techIsNew = false;
         if (!technician) {
             // Auto-create technician with badge ID as name placeholder
             technician = createTechnician({ badgeId: technicianBadgeId, name: technicianBadgeId });
@@ -136,6 +142,7 @@ const Models = (() => {
                 details: `Auto-created from badge scan: ${technicianBadgeId}`,
                 performedBy: clerkName
             }));
+            techIsNew = true;
         }
 
         // Check if technician already has a radio checked out
@@ -183,7 +190,7 @@ const Models = (() => {
             performedBy: clerkName
         }));
 
-        return { radio, technician, transaction };
+        return { radio, technician, transaction, techIsNew };
     }
 
     async function returnRadio(radioId, condition, clerkName, notes = '') {

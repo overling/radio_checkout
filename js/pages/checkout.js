@@ -4,6 +4,7 @@
  */
 UI.registerPage('checkout', async (container) => {
     const autoCheckoutSaved = await DB.getSetting('autoCheckout', false);
+    const promptNameSaved = await DB.getSetting('promptNewTechName', true);
 
     container.innerHTML = `
         <h2 class="page-title">📤 Check Out Radio</h2>
@@ -16,6 +17,14 @@ UI.registerPage('checkout', async (container) => {
                 </label>
                 <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem; margin-left:1.65rem;">
                     Scan radio → Scan badge → Done. Automatically processes the next technician.
+                </div>
+                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600; font-size:0.95rem; margin-top:0.75rem;">
+                    <input type="checkbox" id="co-prompt-name" ${promptNameSaved ? 'checked' : ''}
+                           style="width:20px; height:20px; accent-color:var(--primary); cursor:pointer;">
+                    🪪 Prompt for name on new badges
+                </label>
+                <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem; margin-left:1.65rem;">
+                    When off, new badges are silently registered — add names later in Assets.
                 </div>
             </div>
 
@@ -70,6 +79,12 @@ UI.registerPage('checkout', async (container) => {
     // Persist auto-checkout preference
     autoCheckbox.addEventListener('change', async () => {
         await DB.setSetting('autoCheckout', autoCheckbox.checked);
+    });
+
+    // Persist prompt-for-name preference (shared across all scan pages)
+    const promptNameCheckbox = document.getElementById('co-prompt-name');
+    promptNameCheckbox.addEventListener('change', async () => {
+        await DB.setSetting('promptNewTechName', promptNameCheckbox.checked);
     });
 
     function isAutoCheckout() {
@@ -195,6 +210,11 @@ UI.registerPage('checkout', async (container) => {
                 `Radio ${radioId} checked out to ${result.technician.name || techId}`;
             UI.toast('Checkout successful!', 'success');
             Scanner.speak('Checked out');
+
+            // Prompt for name if new technician
+            if (result.techIsNew) {
+                await UI.promptNewTechName(techId);
+            }
 
             // Auto-reset for next technician in line
             startAutoReset();

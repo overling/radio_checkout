@@ -18,10 +18,18 @@ UI.registerPage('clerk-station', async (container) => {
     let processing = false;    // true only during async DB writes
     let displayTimer = null;   // timer for success/error display reset
     let pageActive = true;
+    const promptNameSaved = await DB.getSetting('promptNewTechName', true);
 
     container.innerHTML = `
         <h2 class="page-title">🖥️ Clerk Station</h2>
-        <p class="cs-subtitle">Just scan — the system figures out the rest.</p>
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.5rem;">
+            <p class="cs-subtitle" style="margin:0;">Just scan — the system figures out the rest.</p>
+            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-size:0.8rem; color:var(--text-secondary);">
+                <input type="checkbox" id="cs-prompt-name" ${promptNameSaved ? 'checked' : ''}
+                       style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;">
+                🪪 Prompt for name on new badges
+            </label>
+        </div>
 
         <div class="cs-layout">
             <div class="cs-main">
@@ -69,6 +77,11 @@ UI.registerPage('clerk-station', async (container) => {
             </div>
         </div>
     `;
+
+    // Persist prompt-for-name preference (shared across all scan pages)
+    document.getElementById('cs-prompt-name').addEventListener('change', async (e) => {
+        await DB.setSetting('promptNewTechName', e.target.checked);
+    });
 
     const input = document.getElementById('cs-input');
     const radioBox = document.getElementById('cs-radio-box');
@@ -246,6 +259,15 @@ UI.registerPage('clerk-station', async (container) => {
             UI.toast(`Checked out: ${radioId} → ${techName}`, 'success');
             Scanner.speak('Checked out');
             processing = false;
+
+            // Prompt for name if new technician, then reset
+            if (result.techIsNew) {
+                const updated = await UI.promptNewTechName(badgeId);
+                if (updated) {
+                    badgeValue.textContent = updated.name || badgeId;
+                    setStatus('success', '✅', `${radioId} → ${updated.name || badgeId}`, 'Checked out successfully');
+                }
+            }
             displayTimer = setTimeout(resetState, 2500);
         } catch (err) {
             setStatus('error', '❌', 'Checkout failed', err.message);
