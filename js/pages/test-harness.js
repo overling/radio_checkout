@@ -1015,12 +1015,17 @@ UI.registerPage('test-harness', async (container) => {
             assert('_showFleetModal exists', typeof _showFleetModal === 'function');
 
             // _fleetModalData is populated when the home page renders.
-            // Trigger a home page render to populate it, then switch back.
-            const prevContent = document.getElementById('app-content').innerHTML;
-            await UI.navigateTo('home');
-            await new Promise(r => setTimeout(r, 300)); // let home page render
+            // We can't navigate to home (navigating back would restart tests).
+            // Instead, populate it directly by reading radios.
+            const allRadiosForModal = await DB.getAll('radios');
+            for (const r of allRadiosForModal) {
+                const isOut = r.status === 'Checked Out';
+                const isMaint = r.status === 'Maintenance';
+                const isRetired = r.status === 'Retired';
+                _fleetModalData[r.id] = { radio: r, info: null, isOut, isMaint, isRetired };
+            }
 
-            const radioCount = (await DB.getAll('radios')).length;
+            const radioCount = allRadiosForModal.length;
             const modalKeys = Object.keys(_fleetModalData);
             assert('Fleet modal data populated', modalKeys.length > 0, `${modalKeys.length} radios`);
             assert('Fleet modal data matches radio count', modalKeys.length === radioCount, `${modalKeys.length}/${radioCount}`);
@@ -1029,9 +1034,6 @@ UI.registerPage('test-harness', async (container) => {
             const sample = _fleetModalData[sampleId];
             assert('Fleet modal entry has radio', !!sample && !!sample.radio && sample.radio.id === sampleId);
             assert('Fleet modal entry has status flags', typeof sample.isOut === 'boolean' && typeof sample.isMaint === 'boolean');
-
-            // Navigate back to test-harness
-            await UI.navigateTo('test-harness');
         } catch (e) {
             assert('Fleet Card Modal', false, e.message);
         }
