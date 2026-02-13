@@ -88,7 +88,7 @@ UI.registerPage('test-harness', async (container) => {
     function makeRadios() {
         const radios = [];
         for (let i = 1; i <= 40; i++) {
-            const id = 'R-' + String(i).padStart(3, '0');
+            const id = 'WV-' + String(i).padStart(3, '0');
             const serial = 'SN' + (100000 + Math.floor(Math.random() * 900000));
             const serviceMonths = Math.floor(Math.random() * 36) + 1;
             const serviceDate = new Date();
@@ -194,7 +194,7 @@ UI.registerPage('test-harness', async (container) => {
 
         const radios = makeRadios();
         await DB.bulkPut('radios', radios);
-        log(`Created ${radios.length} radios (R-001 through R-040)`, 'success');
+        log(`Created ${radios.length} radios (WV-001 through WV-040)`, 'success');
         log(`  Models: ${[...new Set(radios.map(r => r.model))].join(', ')}`, 'info');
 
         const technicians = makeTechnicians();
@@ -433,7 +433,7 @@ UI.registerPage('test-harness', async (container) => {
         }
 
         // Mark 1 radio as Lost
-        const lostRadioId = 'R-038';
+        const lostRadioId = 'WV-038';
         const lostRadio = await DB.get('radios', lostRadioId);
         if (lostRadio && lostRadio.status !== 'Checked Out') {
             lostRadio.status = 'Lost';
@@ -452,7 +452,7 @@ UI.registerPage('test-harness', async (container) => {
         }
 
         // Mark 1 radio as Retired
-        const retiredRadioId = 'R-039';
+        const retiredRadioId = 'WV-039';
         const retiredRadio = await DB.get('radios', retiredRadioId);
         if (retiredRadio && retiredRadio.status !== 'Checked Out') {
             retiredRadio.status = 'Retired';
@@ -473,7 +473,7 @@ UI.registerPage('test-harness', async (container) => {
         }
 
         // Create a radio with high repair count for the supervisor "high frequency" list
-        const fragileId = 'R-005';
+        const fragileId = 'WV-005';
         const fragile = await DB.get('radios', fragileId);
         if (fragile) {
             fragile.repairCount = Math.max(fragile.repairCount, 4);
@@ -575,8 +575,8 @@ UI.registerPage('test-harness', async (container) => {
             const radios = await DB.getAll('radios');
             assert('DB.getAll(radios)', radios.length > 0, `${radios.length} records`);
 
-            const r001 = await DB.get('radios', 'R-001');
-            assert('DB.get(single radio)', !!r001 && r001.id === 'R-001', r001 ? r001.model : 'not found');
+            const r001 = await DB.get('radios', 'WV-001');
+            assert('DB.get(single radio)', !!r001 && r001.id === 'WV-001', r001 ? r001.model : 'not found');
 
             const techByBadge = await DB.getByIndex('technicians', 'badgeId', 'T0101');
             assert('DB.getByIndex(technicians by badge)', techByBadge.length > 0, techByBadge[0]?.name);
@@ -612,6 +612,41 @@ UI.registerPage('test-harness', async (container) => {
             assert('Models.getBatteryStats()', !!battStats, `total=${battStats.total}`);
         } catch (e) {
             assert('Models layer', false, e.message);
+        }
+        await tick();
+
+        // ----- Radio ID Convention (WV prefix) -----
+        log('🏷️ Radio ID Convention (WV Prefix)', 'phase');
+        try {
+            const allRadios = await DB.getAll('radios');
+            const allHavePrefix = allRadios.every(r => r.id.toLowerCase().startsWith('wv'));
+            assert('All radio IDs start with WV', allHavePrefix, `${allRadios.length} radios checked`);
+            const badIds = allRadios.filter(r => !r.id.toLowerCase().startsWith('wv'));
+            if (badIds.length > 0) {
+                assert('No invalid radio IDs', false, `Bad IDs: ${badIds.map(r => r.id).join(', ')}`);
+            }
+
+            // Verify scanner detection functions agree
+            // clerk-station and quick-scan both check value.toLowerCase().startsWith('wv')
+            const testCases = [
+                { input: 'WV-001', expectRadio: true },
+                { input: 'wv-042', expectRadio: true },
+                { input: 'WV100',  expectRadio: true },
+                { input: 'T0101',  expectRadio: false },
+                { input: '12345',  expectRadio: false },
+                { input: 'BADGE1', expectRadio: false }
+            ];
+            let scanDetectOk = true;
+            for (const tc of testCases) {
+                const detected = tc.input.toLowerCase().startsWith('wv');
+                if (detected !== tc.expectRadio) {
+                    scanDetectOk = false;
+                    log(`    FAIL: "${tc.input}" detected as ${detected ? 'radio' : 'badge'}, expected ${tc.expectRadio ? 'radio' : 'badge'}`, 'error');
+                }
+            }
+            assert('Scanner WV prefix detection logic', scanDetectOk, `${testCases.length} cases passed`);
+        } catch (e) {
+            assert('Radio ID convention', false, e.message);
         }
         await tick();
 
@@ -875,13 +910,47 @@ UI.registerPage('test-harness', async (container) => {
         // ----- Page Navigation -----
         log('📄 Page Navigation', 'phase');
         try {
-            // Verify we can navigate to key pages without errors
             assert('Current page accessible', !!UI.currentPage, UI.currentPage);
             assert('navigateTo is function', typeof UI.navigateTo === 'function');
-            // Test that we're on test-harness right now
             assert('On test-harness page', UI.currentPage === 'test-harness', UI.currentPage);
         } catch (e) {
             assert('Page navigation', false, e.message);
+        }
+
+        // ----- Viewport / Responsive -----
+        log('📐 Viewport & Responsive Layout', 'phase');
+        try {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const dpr = window.devicePixelRatio || 1;
+            const screenW = screen.width;
+            const screenH = screen.height;
+            log(`    Viewport: ${vw}×${vh}px | Screen: ${screenW}×${screenH} | DPR: ${dpr} | Zoom: ${Math.round(dpr * 100)}%`, 'info');
+
+            // At 100% zoom on 1920x1200, the nav + header + fleet cards + stat cards should fit
+            // Fleet card is 62px wide + 0.3rem gap ≈ 67px per card
+            // 40 cards at 67px = 2680px → needs ~4 rows at 1400px max-width (~20 per row)
+            const maxContentWidth = 1400;
+            const cardWidth = 62 + 5; // card + gap
+            const cardsPerRow = Math.floor(maxContentWidth / cardWidth);
+            const rowsNeeded = Math.ceil(40 / cardsPerRow);
+            const cardRowHeight = 58; // approx height per card row
+            const fleetHeight = rowsNeeded * cardRowHeight;
+
+            assert('Fleet cards fit in ≤4 rows', rowsNeeded <= 5, `${cardsPerRow} per row × ${rowsNeeded} rows`);
+
+            // Check that nav isn't clipped
+            const nav = document.getElementById('main-nav');
+            if (nav) {
+                const navOverflows = nav.scrollWidth > nav.clientWidth + 10;
+                assert('Nav bar fits without scroll', !navOverflows, `scroll=${nav.scrollWidth}, visible=${nav.clientWidth}`);
+            }
+
+            // Check body doesn't have horizontal scroll
+            const bodyOverflows = document.body.scrollWidth > window.innerWidth + 20;
+            assert('No horizontal page overflow', !bodyOverflows, `body=${document.body.scrollWidth}, viewport=${vw}`);
+        } catch (e) {
+            assert('Viewport check', false, e.message);
         }
 
         // ===== Report Card =====
