@@ -164,6 +164,41 @@ UI.registerPage('home', async (container) => {
     }
 });
 
+// Stores radio data for fleet card click modals
+const _fleetModalData = {};
+
+function _showFleetModal(radioId) {
+    const d = _fleetModalData[radioId];
+    if (!d) return;
+    const { radio: r, info, isOut, isMaint } = d;
+
+    let html = `<div style="font-size:1.1rem;line-height:1.9;">`;
+    html += `<div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem;">📻 ${r.id}</div>`;
+    if (r.model) html += `<div><strong>Model:</strong> ${r.model}</div>`;
+    if (r.serialNumber) html += `<div><strong>S/N:</strong> ${r.serialNumber}</div>`;
+    html += `<div><strong>Status:</strong> ${UI.statusBadge(r.status)}</div>`;
+    if (isOut && info) {
+        html += `<hr style="margin:0.6rem 0;border:none;border-top:1px solid var(--border);">`;
+        html += `<div><strong>Technician:</strong> ${info.techName}</div>`;
+        if (info.techBadge && info.techBadge !== info.techName) html += `<div><strong>Badge:</strong> ${info.techBadge}</div>`;
+        html += `<div><strong>Clerk:</strong> ${info.clerk}</div>`;
+        html += `<div><strong>Checked Out:</strong> ${UI.formatDateTime(info.checkoutTime)}</div>`;
+        html += `<div><strong>Hours Out:</strong> ${info.hoursOut}h`;
+        if (info.isOverdue) html += ` <span style="color:var(--danger);font-weight:700;">⚠️ OVERDUE</span>`;
+        html += `</div>`;
+    }
+    if (isMaint && r.maintenanceHistory && r.maintenanceHistory.length > 0) {
+        const last = r.maintenanceHistory[r.maintenanceHistory.length - 1];
+        html += `<div><strong>Reason:</strong> ${last.reason}</div>`;
+    }
+    if (r.checkoutCount) html += `<div><strong>Total Checkouts:</strong> ${r.checkoutCount}</div>`;
+    if (r.inServiceDate) html += `<div><strong>In Service:</strong> ${UI.formatDate(r.inServiceDate)}</div>`;
+    if (r.notes) html += `<div style="margin-top:0.3rem;"><strong>Notes:</strong> ${r.notes}</div>`;
+    html += `</div>`;
+
+    UI.showModal(r.id, html);
+}
+
 async function renderRadioFleetStrip() {
     const radios = await DB.getAll('radios');
     if (radios.length === 0) {
@@ -256,8 +291,11 @@ async function renderRadioFleetStrip() {
         if (r.checkoutCount) tooltipLines.push(`Total checkouts: ${r.checkoutCount}`);
         const tooltip = tooltipLines.join('<br>');
 
+        // Store modal data for click handler (avoids inline HTML escaping issues)
+        _fleetModalData[r.id] = { radio: r, info, isOut, isMaint, isRetired };
+
         return `
-            <div class="fleet-card ${statusClass}">
+            <div class="fleet-card ${statusClass}" data-radio-id="${r.id}" style="cursor:pointer;">
                 <div class="fleet-tooltip">${tooltip}</div>
                 <div class="fleet-icon">📻</div>
                 <div class="fleet-label">${r.id}</div>
@@ -279,4 +317,9 @@ async function renderRadioFleetStrip() {
         </div>
         <div class="fleet-strip">${cards}</div>
     `;
+
+    // Attach click handlers to fleet cards
+    document.querySelectorAll('.fleet-card[data-radio-id]').forEach(card => {
+        card.addEventListener('click', () => _showFleetModal(card.dataset.radioId));
+    });
 }
