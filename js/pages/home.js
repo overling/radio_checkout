@@ -268,6 +268,13 @@ async function renderRadioFleetStrip() {
 
     document.getElementById('home-radio-fleet').innerHTML = `
         <h3 class="page-subtitle">Radio Fleet <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">(${radios.length} radios — hover for details)</span></h3>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.4rem;font-size:0.65rem;font-weight:600;color:var(--text-muted);">
+            <span style="display:flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;border-radius:2px;background:var(--success-light);border:2px solid var(--success);display:inline-block;"></span> Available</span>
+            <span style="display:flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;border-radius:2px;background:var(--warning-light);border:2px solid var(--warning);display:inline-block;"></span> Checked Out</span>
+            <span style="display:flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;border-radius:2px;background:var(--danger-light);border:2px solid var(--danger);display:inline-block;"></span> Overdue</span>
+            <span style="display:flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;border-radius:2px;background:var(--info-light);border:2px solid var(--info);display:inline-block;"></span> Maintenance</span>
+            <span style="display:flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;border-radius:2px;background:var(--gray-100);border:2px solid var(--gray-300);display:inline-block;opacity:0.5;"></span> Retired / Lost</span>
+        </div>
         <div class="fleet-strip">${cards}</div>
     `;
 }
