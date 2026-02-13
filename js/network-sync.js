@@ -124,6 +124,9 @@ const NetworkSync = (() => {
                 const newest = await _getNewestBackupTimestamp();
                 if (newest && new Date(newest) > new Date(localModified)) {
                     console.log(`Sync skip: backup file is newer (${newest}) than local DB (${localModified})`);
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('Backup folder has newer data — save skipped to protect it', 'info', 4000);
+                    }
                     return { ok: false, skipped: true, error: 'Backup is newer than local — not overwriting' };
                 }
             }

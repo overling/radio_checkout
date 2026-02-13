@@ -39,6 +39,9 @@ function applyTheme(theme) {
             const snapResult = await Snapshot.autoRestore();
             if (snapResult.restored) {
                 console.log(`Database restored from snapshot: ${snapResult.radioCount} radios, ${snapResult.techCount} techs`);
+                setTimeout(() => {
+                    UI.toast(`Database loaded from snapshot file: ${snapResult.radioCount} radios, ${snapResult.techCount} technicians restored ✅`, 'success', 6000);
+                }, 1000);
             }
         } catch (e) {
             console.warn('Snapshot auto-restore skipped:', e.message);

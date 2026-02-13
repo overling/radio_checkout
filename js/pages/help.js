@@ -44,6 +44,7 @@ UI.registerPage('help', async (container) => {
                     <a href="#help-print" class="help-toc-link">🏷️ Print Codes</a>
                     <a href="#help-export" class="help-toc-link">💾 Export</a>
                     <a href="#help-scanner" class="help-toc-link">📷 Scanner Prefixes</a>
+                    <a href="#help-backup" class="help-toc-link">💾 Database Backup & Sync</a>
                     <a href="#help-tips" class="help-toc-link">💡 Tips & Tricks</a>
                 </div>
             </div>
@@ -392,6 +393,90 @@ UI.registerPage('help', async (container) => {
                 </div>
             </div>
 
+            <!-- DATABASE BACKUP & SYNC -->
+            <div class="card help-section" id="help-backup">
+                <div class="card-header"><h3>💾 Database Backup & Sync</h3></div>
+                <p><strong>Important:</strong> Your data lives in the browser, NOT in the app folder. If you copy the app to another computer, the data doesn't come with it — unless you use the backup features below.</p>
+                <div class="help-steps">
+                    <div class="help-step">
+                        <div class="help-step-icon">💾</div>
+                        <div>
+                            <strong>Save Button (💾 Save in header):</strong> Click this to save your database to a file called <code>db-snapshot.json</code> in the app folder.
+                            <ul>
+                                <li>First time: it asks you where to save — pick your app folder</li>
+                                <li>After that, it saves silently every time your data changes</li>
+                                <li>When you copy the folder to another machine, this file goes with it</li>
+                                <li>The new machine sees the file on startup and loads it automatically</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="help-step">
+                        <div class="help-step-icon">🔄</div>
+                        <div>
+                            <strong>Folder Sync (Supervisor → Folder Sync & Backup):</strong> For sharing data between multiple machines.
+                            <ul>
+                                <li>Pick a shared network folder (like <code>\\server\share\backup</code>)</li>
+                                <li>The app automatically saves your database to that folder on a timer (1, 4, 8, or 16 hours)</li>
+                                <li>Other machines can load from the same folder</li>
+                                <li>Uses two alternating backup files (A and B) for crash safety</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="help-step">
+                        <div class="help-step-icon" style="font-size:1.5rem;">🔵</div>
+                        <div>
+                            <strong>The Blue "Connect" Banner:</strong> Every time you open the app, you'll see a blue banner at the top:
+                            <div style="background:linear-gradient(135deg,#1565c0,#1a73e8);color:#fff;padding:0.5rem 0.75rem;border-radius:6px;margin:0.5rem 0;font-size:0.85rem;text-align:center;">
+                                💾 Click the button below to connect your backup folders
+                            </div>
+                            <strong>Just click it.</strong> This is required by the browser for security — the app needs your permission to save files.
+                            After one click, everything saves automatically for the rest of the session.
+                        </div>
+                    </div>
+                    <div class="help-step">
+                        <div class="help-step-icon">🛡️</div>
+                        <div>
+                            <strong>Newer Data Always Wins:</strong> The app will <em>never</em> overwrite a newer database with older data.
+                            <ul>
+                                <li>Every time data changes, the app records the exact time</li>
+                                <li>Before saving to a backup file, the app checks: is the file already newer?</li>
+                                <li>If the backup file is newer, the save is <strong>skipped</strong> — you'll see a message: <em>"Backup folder has newer data — save skipped to protect it"</em></li>
+                                <li>When you reconnect, the app checks: is the backup folder newer than my local data? If yes, it <strong>loads the newer data automatically</strong></li>
+                                <li>You'll see a message: <em>"Loaded newer data from backup folder ✅"</em></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="help-step">
+                        <div class="help-step-icon">📋</div>
+                        <div>
+                            <strong>Messages you might see:</strong>
+                            <table style="width:100%;font-size:0.85rem;border-collapse:collapse;margin-top:0.5rem;">
+                                <tr style="border-bottom:1px solid var(--border);">
+                                    <td style="padding:0.3rem;">✅ <em>"Auto-save connected"</em></td>
+                                    <td style="padding:0.3rem;">Backup is working. No action needed.</td>
+                                </tr>
+                                <tr style="border-bottom:1px solid var(--border);">
+                                    <td style="padding:0.3rem;">✅ <em>"Loaded newer data from backup folder"</em></td>
+                                    <td style="padding:0.3rem;">Another machine saved newer data. Your screen will update.</td>
+                                </tr>
+                                <tr style="border-bottom:1px solid var(--border);">
+                                    <td style="padding:0.3rem;">ℹ️ <em>"Backup folder has newer data — save skipped"</em></td>
+                                    <td style="padding:0.3rem;">Your data is older. The app protected the newer backup. Normal.</td>
+                                </tr>
+                                <tr style="border-bottom:1px solid var(--border);">
+                                    <td style="padding:0.3rem;">✅ <em>"Database restored from snapshot file"</em></td>
+                                    <td style="padding:0.3rem;">Fresh machine loaded data from db-snapshot.json in the folder.</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:0.3rem;">❌ <em>"No backup files found"</em></td>
+                                    <td style="padding:0.3rem;">The folder is empty. Save data first from the other machine.</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- TIPS -->
             <div class="card help-section" id="help-tips">
                 <div class="card-header"><h3>💡 Tips & Tricks</h3></div>
@@ -412,7 +497,7 @@ UI.registerPage('help', async (container) => {
                         <div class="help-step-icon">💾</div>
                         <div>
                             <strong>Data is saved locally:</strong> All data lives in your browser (IndexedDB). No internet needed.
-                            But make sure to export backups regularly!
+                            Use the 💾 Save button and Folder Sync to keep backups. See the <a href="#help-backup" class="help-toc-link" style="display:inline;">Database Backup & Sync</a> section for details.
                         </div>
                     </div>
                     <div class="help-step">

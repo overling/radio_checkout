@@ -103,6 +103,9 @@ const Snapshot = (() => {
             const existingTs = await _readExistingTimestamp();
             if (localModified && existingTs && new Date(existingTs) > new Date(localModified)) {
                 console.log(`Snapshot skip: file is newer (${existingTs}) than local DB (${localModified})`);
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('Snapshot file has newer data — local save skipped to protect it', 'info', 4000);
+                }
                 return false;
             }
 
