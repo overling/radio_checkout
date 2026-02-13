@@ -210,11 +210,6 @@ UI.registerPage('quick-scan', async (container) => {
         `).join('');
     }
 
-    // ===== SCAN DETECTION =====
-    function looksLikeRadioId(value) {
-        return value.toLowerCase().startsWith('wv');
-    }
-
     // ===== MAIN SCAN HANDLER =====
     async function handleScan(value) {
         value = value.trim();
@@ -235,23 +230,23 @@ UI.registerPage('quick-scan', async (container) => {
             return;
         }
 
-        // Smart detect: is this a radio or a badge?
-        let isRadio = looksLikeRadioId(value);
-        if (!isRadio) {
-            const maybeRadio = await DB.get('radios', value);
-            if (maybeRadio) isRadio = true;
-        }
+        // Smart detect using configurable prefixes
+        const scanResult = await AssetPrefixes.identify(value);
 
-        if (isRadio) {
+        if (scanResult.type === 'radio') {
             await handleRadioScan(value);
-        } else {
-            // Not a radio — treat as a badge
+        } else if (scanResult.type === 'badge') {
             if (currentMode === 'IN') {
                 setStatus('error', '🪪', 'Badge not needed for check-in', 'Just scan the radio to return it.');
                 setTimeout(resetState, 2500);
                 return;
             }
             await handleBadgeFirst(value);
+        } else {
+            // battery, tool, or other asset — show info
+            setStatus('info', '📦', `Asset detected: ${scanResult.type}`, `ID: ${value} (${scanResult.source} match)`);
+            addActivity('📦', `Scanned ${scanResult.type}: ${value}`, scanResult.source);
+            displayTimer = setTimeout(resetState, 3000);
         }
     }
 

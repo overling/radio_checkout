@@ -69,6 +69,7 @@ UI.registerPage('supervisor', async (container) => {
     const emailContacts = await DB.getSetting('emailContacts', []);
     const emailMessage = await DB.getSetting('overdueEmailMessage', 'The following radios are overdue and have not been returned within the allowed time. Please follow up with the assigned technicians.');
     const syncSettings = typeof NetworkSync !== 'undefined' ? await NetworkSync.getSettings() : { enabled: false, networkPath: '', intervalHours: 8 };
+    const assetPrefixes = await AssetPrefixes.getAll();
 
     container.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem;">
@@ -209,6 +210,52 @@ UI.registerPage('supervisor', async (container) => {
                 <div id="sv-sync-file-list" style="color:var(--text-muted);">Loading...</div>
             </div>
             <div id="sv-sync-info" style="font-size:0.8rem;color:var(--text-muted);"></div>
+        </div>
+
+        <!-- Asset Prefix Configuration -->
+        <div class="card no-print">
+            <div class="card-header"><h3>🏷️ Scanner Prefixes</h3></div>
+            <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.75rem;">
+                Configure how the scanner identifies asset types by their ID prefix.
+                IDs starting with a <strong>digit</strong> are always treated as badges.
+                IDs starting with a <strong>letter</strong> are matched against these prefixes.
+            </p>
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:0.75rem;">
+                <thead>
+                    <tr style="border-bottom:2px solid var(--border);text-align:left;">
+                        <th style="padding:0.4rem;">Prefix</th>
+                        <th style="padding:0.4rem;">Category</th>
+                        <th style="padding:0.4rem;">Label</th>
+                        <th style="padding:0.4rem;width:40px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="sv-prefix-list">
+                    ${assetPrefixes.map((p, i) => `
+                    <tr data-idx="${i}" style="border-bottom:1px solid var(--border);">
+                        <td style="padding:0.4rem;"><code style="font-weight:700;font-size:0.95rem;">${p.prefix}</code></td>
+                        <td style="padding:0.4rem;">${p.category}</td>
+                        <td style="padding:0.4rem;">${p.label}</td>
+                        <td style="padding:0.4rem;"><button class="btn btn-sm btn-outline sv-prefix-del" data-idx="${i}" style="color:var(--danger);padding:0.1rem 0.4rem;">✕</button></td>
+                    </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;margin-bottom:0.5rem;">
+                <div class="form-group" style="margin-bottom:0;flex:0 0 100px;">
+                    <label for="sv-prefix-new" style="font-size:0.75rem;">Prefix</label>
+                    <input type="text" id="sv-prefix-new" placeholder="e.g. WV" style="text-transform:uppercase;font-size:0.85rem;padding:0.4rem;">
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:100px;">
+                    <label for="sv-prefix-cat" style="font-size:0.75rem;">Category</label>
+                    <input type="text" id="sv-prefix-cat" placeholder="e.g. radio" style="font-size:0.85rem;padding:0.4rem;">
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:100px;">
+                    <label for="sv-prefix-label" style="font-size:0.75rem;">Display Label</label>
+                    <input type="text" id="sv-prefix-label" placeholder="e.g. Radio" style="font-size:0.85rem;padding:0.4rem;">
+                </div>
+                <button class="btn btn-sm btn-primary" id="sv-prefix-add" style="height:32px;">+ Add</button>
+            </div>
+            <button class="btn btn-sm btn-outline" id="sv-prefix-reset" style="font-size:0.75rem;">↩ Reset to Defaults</button>
         </div>
 
         <!-- Password & Security -->
@@ -554,6 +601,52 @@ UI.registerPage('supervisor', async (container) => {
         btn.disabled = false;
         btn.textContent = '🩺 Check Integrity';
         refreshSyncIndicators();
+    });
+
+    // ===== Asset Prefix Management =====
+    document.getElementById('sv-prefix-add').addEventListener('click', async () => {
+        const prefix = document.getElementById('sv-prefix-new').value.trim().toUpperCase();
+        const category = document.getElementById('sv-prefix-cat').value.trim().toLowerCase();
+        const label = document.getElementById('sv-prefix-label').value.trim();
+
+        if (!prefix || !category || !label) {
+            UI.toast('Fill in all three fields: Prefix, Category, and Label', 'error');
+            return;
+        }
+        if (!/^[A-Z]+$/.test(prefix)) {
+            UI.toast('Prefix must be letters only (A-Z)', 'error');
+            return;
+        }
+
+        const current = await AssetPrefixes.getAll();
+        const duplicate = current.find(p => p.prefix.toUpperCase() === prefix);
+        if (duplicate) {
+            UI.toast(`Prefix "${prefix}" already exists (→ ${duplicate.category})`, 'error');
+            return;
+        }
+
+        current.push({ prefix, category, label });
+        await AssetPrefixes.save(current);
+        UI.toast(`Prefix "${prefix}" → ${category} added`, 'success');
+        UI.navigateTo('supervisor');
+    });
+
+    document.querySelectorAll('.sv-prefix-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const idx = parseInt(btn.dataset.idx);
+            const current = await AssetPrefixes.getAll();
+            const removed = current.splice(idx, 1)[0];
+            await AssetPrefixes.save(current);
+            UI.toast(`Prefix "${removed.prefix}" removed`, 'success');
+            UI.navigateTo('supervisor');
+        });
+    });
+
+    document.getElementById('sv-prefix-reset').addEventListener('click', async () => {
+        if (!confirm('Reset all prefixes to defaults (WV → radio, BAT → battery, T → tool)?')) return;
+        await AssetPrefixes.resetToDefaults();
+        UI.toast('Prefixes reset to defaults', 'success');
+        UI.navigateTo('supervisor');
     });
 
     // ===== Password change/set/remove =====

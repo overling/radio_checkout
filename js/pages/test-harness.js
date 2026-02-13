@@ -841,6 +841,31 @@ UI.registerPage('test-harness', async (container) => {
         }
         await tick();
 
+        // ----- Asset Prefixes module -----
+        log('🏷️ Asset Prefixes Module', 'phase');
+        try {
+            assert('AssetPrefixes module loaded', typeof AssetPrefixes !== 'undefined');
+            const prefixes = await AssetPrefixes.getAll();
+            assert('AssetPrefixes.getAll()', Array.isArray(prefixes) && prefixes.length > 0, `${prefixes.length} prefixes`);
+            assert('Default WV prefix exists', prefixes.some(p => p.prefix === 'WV' && p.category === 'radio'));
+            assert('Prefixes have required fields', prefixes.every(p => p.prefix && p.category && p.label));
+
+            // Test identify — digit-first = badge
+            const badgeResult = await AssetPrefixes.identify('12345');
+            assert('Digit-first → badge', badgeResult.type === 'badge', badgeResult.type);
+
+            // Test identify — WV prefix = radio
+            const radioResult = await AssetPrefixes.identify('WV-001');
+            assert('WV prefix → radio', radioResult.type === 'radio', radioResult.source);
+
+            // Test startsWithLetter
+            assert('startsWithLetter("ABC")', AssetPrefixes.startsWithLetter('ABC') === true);
+            assert('startsWithLetter("123")', AssetPrefixes.startsWithLetter('123') === false);
+        } catch (e) {
+            assert('Asset Prefixes', false, e.message);
+        }
+        await tick();
+
         // ----- Auto-backup module -----
         log('💾 Auto-Backup Module', 'phase');
         try {

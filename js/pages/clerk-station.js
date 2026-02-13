@@ -98,9 +98,6 @@ UI.registerPage('clerk-station', async (container) => {
     let activityEntries = [];
 
     // ===== HELPERS =====
-    function isRadioId(value) {
-        return value.toLowerCase().startsWith('wv');
-    }
 
     function setStatus(type, icon, text, sub) {
         statusEl.className = 'qs-status qs-status-' + type;
@@ -157,21 +154,18 @@ UI.registerPage('clerk-station', async (container) => {
         if (displayTimer) { resetState(); }
         input.value = '';
 
-        // Determine if this is a radio or a badge
-        let isRadio = isRadioId(value);
+        // Smart detect using configurable prefixes
+        const scanResult = await AssetPrefixes.identify(value);
 
-        // Also check DB: if it's a known radio ID even without "wv" prefix
-        if (!isRadio) {
-            const maybeRadio = await DB.get('radios', value);
-            if (maybeRadio) {
-                isRadio = true;
-            }
-        }
-
-        if (isRadio) {
+        if (scanResult.type === 'radio') {
             await handleRadioScanned(value);
-        } else {
+        } else if (scanResult.type === 'badge') {
             await handleBadgeScanned(value);
+        } else {
+            // battery, tool, or other asset category — show info
+            setStatus('info', '📦', `Asset detected: ${scanResult.type}`, `ID: ${value} (${scanResult.source} match)`);
+            addActivity('📦', `Scanned ${scanResult.type}: ${value}`, scanResult.source);
+            displayTimer = setTimeout(resetState, 3000);
         }
     }
 
