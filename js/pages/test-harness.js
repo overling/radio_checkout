@@ -1079,6 +1079,11 @@ UI.registerPage('test-harness', async (container) => {
     });
 
     document.getElementById('th-run-tests-only').addEventListener('click', async () => {
+        // Check if data exists first
+        const radioCount = await DB.count('radios');
+        if (radioCount === 0) {
+            if (!confirm('⚠️ Database is EMPTY — no radios, technicians, or transactions.\n\nMost tests will fail because there is nothing to test.\n\nRun the Full Week Simulation first to populate data, or click OK to run tests anyway.')) return;
+        }
         logEl.innerHTML = '';
         reportCard.style.display = 'none';
         progressEl.style.display = 'none';
