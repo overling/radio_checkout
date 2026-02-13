@@ -78,6 +78,9 @@ function Send-ErrorResponse($resp, $statusCode, $message) {
     $resp.OutputStream.Flush()
 }
 
+# Pre-load Windows Forms for folder browser dialog
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+
 try {
     while ($listener.IsListening) {
         $ctx = $listener.GetContext()
@@ -86,8 +89,31 @@ try {
         $path = $req.Url.LocalPath
 
         try {
+            # ===== API: GET /api/browse-folder — open native Windows folder picker =====
+            if ($path -eq '/api/browse-folder' -and $req.HttpMethod -eq 'GET') {
+                Write-Host "  [BROWSE] Opening folder picker..." -ForegroundColor Yellow
+                $selectedPath = ""
+                try {
+                    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+                    $dialog.Description = "Select a shared network folder for database sync"
+                    $dialog.ShowNewFolderButton = $true
+                    $dialog.RootFolder = [System.Environment+SpecialFolder]::MyComputer
+                    $result = $dialog.ShowDialog()
+                    if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+                        $selectedPath = $dialog.SelectedPath
+                        Write-Host "  [BROWSE] Selected: $selectedPath" -ForegroundColor Green
+                    } else {
+                        Write-Host "  [BROWSE] Cancelled by user" -ForegroundColor Gray
+                    }
+                    $dialog.Dispose()
+                } catch {
+                    Write-Host "  [BROWSE] Error: $_" -ForegroundColor Red
+                }
+                $obj = @{ ok = $true; path = $selectedPath }
+                Send-JsonResponse $resp 200 $obj
+            }
             # ===== API: POST /api/sync — save DB to local + network =====
-            if ($path -eq '/api/sync' -and $req.HttpMethod -eq 'POST') {
+            elseif ($path -eq '/api/sync' -and $req.HttpMethod -eq 'POST') {
                 $reader = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
                 $body = $reader.ReadToEnd()
                 $reader.Close()

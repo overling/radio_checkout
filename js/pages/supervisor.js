@@ -104,8 +104,11 @@ UI.registerPage('supervisor', async (container) => {
             <div class="form-row">
                 <div class="form-group">
                     <label for="sv-sync-path">Network Folder Path</label>
-                    <input type="text" id="sv-sync-path" value="${syncSettings.networkPath || ''}" placeholder="\\\\server\\share\\radio_backup" autocomplete="off">
-                    <small style="color:var(--text-muted);">UNC path to a shared folder all computers can access</small>
+                    <div style="display:flex;gap:0.5rem;align-items:center;">
+                        <input type="text" id="sv-sync-path" value="${syncSettings.networkPath || ''}" placeholder="\\\\server\\share\\radio_backup" autocomplete="off" style="flex:1;">
+                        <button class="btn btn-outline" id="sv-sync-browse" title="Browse for folder">📂 Browse</button>
+                    </div>
+                    <small style="color:var(--text-muted);">UNC path to a shared folder all computers can access, or click Browse to pick one</small>
                 </div>
                 <div class="form-group">
                     <label for="sv-sync-interval">Push Interval</label>
@@ -255,6 +258,29 @@ UI.registerPage('supervisor', async (container) => {
     });
 
     // ===== Network Sync controls =====
+    // Browse button — opens native Windows folder picker via server API
+    document.getElementById('sv-sync-browse').addEventListener('click', async () => {
+        const btn = document.getElementById('sv-sync-browse');
+        btn.disabled = true;
+        btn.textContent = '⏳ Waiting...';
+        try {
+            const resp = await fetch('/api/browse-folder');
+            if (!resp.ok) throw new Error('Server returned ' + resp.status);
+            const result = await resp.json();
+            if (result.path) {
+                document.getElementById('sv-sync-path').value = result.path;
+                UI.toast('Folder selected: ' + result.path, 'success');
+            } else {
+                UI.toast('No folder selected', 'info');
+            }
+        } catch (e) {
+            UI.toast('Could not open folder picker: ' + e.message + '. Is the server running via start.bat?', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '📂 Browse';
+        }
+    });
+
     document.getElementById('sv-sync-save').addEventListener('click', async () => {
         const enabled = document.getElementById('sv-sync-enabled').checked;
         const networkPath = document.getElementById('sv-sync-path').value.trim();
