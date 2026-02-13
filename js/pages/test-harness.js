@@ -1100,13 +1100,39 @@ UI.registerPage('test-harness', async (container) => {
     });
 
     document.getElementById('th-clear').addEventListener('click', async () => {
-        if (!confirm('This will DELETE ALL data (radios, technicians, transactions, settings). Are you sure?')) return;
-        const stores = ['radios', 'batteries', 'tools', 'technicians', 'transactions', 'auditLog', 'settings', 'backups'];
-        for (const store of stores) {
-            await DB.clear(store);
-        }
-        UI.toast('All data cleared', 'success');
-        logEl.innerHTML = '';
-        log('All data cleared.', 'success');
+        UI.showModal('⚠️ Clear All Data', `
+            <div style="text-align:center;">
+                <p style="color:var(--danger);font-weight:700;font-size:1.1rem;margin-bottom:0.5rem;">
+                    This will permanently delete ALL data!
+                </p>
+                <p style="color:var(--text-secondary);margin-bottom:0.75rem;">
+                    All radios, batteries, technicians, transactions, settings, and audit logs will be erased.<br>
+                    <strong>This cannot be undone.</strong>
+                </p>
+                <p style="margin-bottom:0.5rem;font-size:0.85rem;">Type <strong style="color:var(--danger);">DELETE</strong> to confirm:</p>
+                <input type="text" id="th-clear-confirm" placeholder="Type DELETE here" autocomplete="off"
+                    style="width:100%;max-width:260px;padding:0.6rem;border:2px solid var(--danger);border-radius:var(--radius);font-size:1rem;text-align:center;background:var(--input-bg);color:var(--text);">
+            </div>
+        `, `
+            <button class="btn btn-outline" id="th-clear-cancel">Cancel</button>
+            <button class="btn btn-danger" id="th-clear-go" disabled>🗑️ Clear Everything</button>
+        `);
+
+        const inp = document.getElementById('th-clear-confirm');
+        const goBtn = document.getElementById('th-clear-go');
+        document.getElementById('th-clear-cancel').addEventListener('click', () => UI.closeModal());
+        inp.addEventListener('input', () => { goBtn.disabled = inp.value.trim() !== 'DELETE'; });
+        goBtn.addEventListener('click', async () => {
+            if (inp.value.trim() !== 'DELETE') return;
+            UI.closeModal();
+            const stores = ['radios', 'batteries', 'tools', 'technicians', 'transactions', 'auditLog', 'settings', 'backups'];
+            for (const store of stores) {
+                await DB.clear(store);
+            }
+            UI.toast('All data cleared', 'success');
+            logEl.innerHTML = '';
+            log('All data cleared.', 'success');
+        });
+        setTimeout(() => inp.focus(), 100);
     });
 });
