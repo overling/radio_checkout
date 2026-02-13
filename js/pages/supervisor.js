@@ -111,13 +111,11 @@ UI.registerPage('supervisor', async (container) => {
                 </div>
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="sv-sync-enabled" ${syncSettings.enabled ? 'checked' : ''}>
-                        Enable Network Sync
-                    </label>
-                </div>
+            <div style="margin-bottom:0.75rem;">
+                <label style="display:inline-flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--text-secondary);">
+                    <input type="checkbox" id="sv-sync-enabled" ${syncSettings.enabled ? 'checked' : ''}>
+                    Enable Network Sync
+                </label>
             </div>
             <div class="form-row">
                 <div class="form-group">
