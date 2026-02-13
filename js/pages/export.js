@@ -604,20 +604,51 @@ UI.registerPage('export', async (container) => {
         }
     });
 
-    // Clear all data
+    // Clear all data — requires typing DELETE to confirm
     document.getElementById('clear-data-btn').addEventListener('click', async () => {
-        if (!UI.confirm('⚠️ This will DELETE ALL DATA. This cannot be undone!\n\nAre you sure?')) return;
-        if (!UI.confirm('FINAL WARNING: All radios, batteries, tools, transactions, and audit logs will be permanently deleted.\n\nType OK to confirm.')) return;
+        UI.showModal('⚠️ Clear All Data', `
+            <div style="text-align:center;">
+                <p style="color:var(--danger);font-weight:700;font-size:1.1rem;margin-bottom:0.5rem;">
+                    This will permanently delete ALL data!
+                </p>
+                <p style="color:var(--text-secondary);margin-bottom:0.75rem;">
+                    All radios, batteries, technicians, transactions, and audit logs will be erased.<br>
+                    <strong>This cannot be undone.</strong> Export a backup first if needed.
+                </p>
+                <p style="margin-bottom:0.5rem;font-size:0.85rem;">Type <strong style="color:var(--danger);">DELETE</strong> to confirm:</p>
+                <input type="text" id="clear-confirm-input" placeholder="Type DELETE here" autocomplete="off"
+                    style="width:100%;max-width:260px;padding:0.6rem;border:2px solid var(--danger);border-radius:var(--radius);font-size:1rem;text-align:center;background:var(--input-bg);color:var(--text);">
+            </div>
+        `, `
+            <button class="btn btn-outline" id="clear-cancel-btn">Cancel</button>
+            <button class="btn btn-danger" id="clear-confirm-btn" disabled>🗑️ Clear Everything</button>
+        `);
 
-        try {
-            const stores = ['radios', 'batteries', 'tools', 'technicians', 'transactions', 'auditLog'];
-            for (const store of stores) {
-                await DB.clear(store);
+        const confirmInput = document.getElementById('clear-confirm-input');
+        const confirmBtn = document.getElementById('clear-confirm-btn');
+        const cancelBtn = document.getElementById('clear-cancel-btn');
+
+        confirmInput.addEventListener('input', () => {
+            confirmBtn.disabled = confirmInput.value.trim() !== 'DELETE';
+        });
+
+        cancelBtn.addEventListener('click', () => UI.closeModal());
+
+        confirmBtn.addEventListener('click', async () => {
+            if (confirmInput.value.trim() !== 'DELETE') return;
+            UI.closeModal();
+            try {
+                const stores = ['radios', 'batteries', 'tools', 'technicians', 'transactions', 'auditLog'];
+                for (const store of stores) {
+                    await DB.clear(store);
+                }
+                UI.toast('All data cleared', 'warning');
+                UI.navigateTo('home');
+            } catch (e) {
+                UI.toast('Clear failed: ' + e.message, 'error');
             }
-            UI.toast('All data cleared', 'warning');
-            UI.navigateTo('home');
-        } catch (e) {
-            UI.toast('Clear failed: ' + e.message, 'error');
-        }
+        });
+
+        setTimeout(() => confirmInput.focus(), 100);
     });
 });
