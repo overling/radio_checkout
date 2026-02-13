@@ -638,25 +638,25 @@ UI.registerPage('test-harness', async (container) => {
                 assert('No invalid radio IDs', false, `Bad IDs: ${badIds.map(r => r.id).join(', ')}`);
             }
 
-            // Verify scanner detection functions agree
-            // clerk-station and quick-scan both check value.toLowerCase().startsWith('wv')
+            // Verify scanner detection via AssetPrefixes.identify()
             const testCases = [
-                { input: 'WV-001', expectRadio: true },
-                { input: 'wv-042', expectRadio: true },
-                { input: 'WV100',  expectRadio: true },
-                { input: 'T0101',  expectRadio: false },
-                { input: '12345',  expectRadio: false },
-                { input: 'BADGE1', expectRadio: false }
+                { input: 'WV-001', expectType: 'radio' },
+                { input: 'wv-042', expectType: 'radio' },
+                { input: 'WV100',  expectType: 'radio' },
+                { input: 'BAT-01', expectType: 'battery' },
+                { input: 'T-005',  expectType: 'tool' },
+                { input: '12345',  expectType: 'badge' },
+                { input: '99887',  expectType: 'badge' }
             ];
             let scanDetectOk = true;
             for (const tc of testCases) {
-                const detected = tc.input.toLowerCase().startsWith('wv');
-                if (detected !== tc.expectRadio) {
+                const result = await AssetPrefixes.identify(tc.input);
+                if (result.type !== tc.expectType) {
                     scanDetectOk = false;
-                    log(`    FAIL: "${tc.input}" detected as ${detected ? 'radio' : 'badge'}, expected ${tc.expectRadio ? 'radio' : 'badge'}`, 'error');
+                    log(`    FAIL: "${tc.input}" → ${result.type}, expected ${tc.expectType}`, 'error');
                 }
             }
-            assert('Scanner WV prefix detection logic', scanDetectOk, `${testCases.length} cases passed`);
+            assert('Scanner prefix detection logic', scanDetectOk, `${testCases.length} cases passed`);
         } catch (e) {
             assert('Radio ID convention', false, e.message);
         }
@@ -848,19 +848,54 @@ UI.registerPage('test-harness', async (container) => {
             const prefixes = await AssetPrefixes.getAll();
             assert('AssetPrefixes.getAll()', Array.isArray(prefixes) && prefixes.length > 0, `${prefixes.length} prefixes`);
             assert('Default WV prefix exists', prefixes.some(p => p.prefix === 'WV' && p.category === 'radio'));
+            assert('Default BAT prefix exists', prefixes.some(p => p.prefix === 'BAT' && p.category === 'battery'));
+            assert('Default T prefix exists', prefixes.some(p => p.prefix === 'T' && p.category === 'tool'));
             assert('Prefixes have required fields', prefixes.every(p => p.prefix && p.category && p.label));
 
-            // Test identify — digit-first = badge
-            const badgeResult = await AssetPrefixes.identify('12345');
-            assert('Digit-first → badge', badgeResult.type === 'badge', badgeResult.type);
-
-            // Test identify — WV prefix = radio
-            const radioResult = await AssetPrefixes.identify('WV-001');
-            assert('WV prefix → radio', radioResult.type === 'radio', radioResult.source);
+            // Test identify — all default categories
+            const idRadio = await AssetPrefixes.identify('WV-001');
+            assert('Identify WV → radio', idRadio.type === 'radio' && idRadio.source === 'prefix');
+            const idBat = await AssetPrefixes.identify('BAT-05');
+            assert('Identify BAT → battery', idBat.type === 'battery' && idBat.source === 'prefix');
+            const idTool = await AssetPrefixes.identify('T-010');
+            assert('Identify T → tool', idTool.type === 'tool' && idTool.source === 'prefix');
+            const idBadge = await AssetPrefixes.identify('12345');
+            assert('Identify digit → badge', idBadge.type === 'badge');
 
             // Test startsWithLetter
             assert('startsWithLetter("ABC")', AssetPrefixes.startsWithLetter('ABC') === true);
             assert('startsWithLetter("123")', AssetPrefixes.startsWithLetter('123') === false);
+
+            // Test save/load round-trip with custom prefix
+            const backup = await AssetPrefixes.getAll();
+            const custom = [...backup, { prefix: 'VEH', category: 'vehicle', label: 'Vehicle' }];
+            await AssetPrefixes.save(custom);
+            AssetPrefixes.clearCache();
+            const reloaded = await AssetPrefixes.getAll();
+            assert('Save/load custom prefix', reloaded.some(p => p.prefix === 'VEH' && p.category === 'vehicle'), `${reloaded.length} prefixes`);
+
+            // Test custom prefix detection
+            const idVeh = await AssetPrefixes.identify('VEH-001');
+            assert('Identify custom VEH → vehicle', idVeh.type === 'vehicle' && idVeh.source === 'prefix');
+
+            // Test longest-prefix-wins (WV should beat a hypothetical W prefix)
+            const withW = [...reloaded, { prefix: 'W', category: 'widget', label: 'Widget' }];
+            await AssetPrefixes.save(withW);
+            AssetPrefixes.clearCache();
+            const idWV = await AssetPrefixes.identify('WV-001');
+            assert('Longest prefix wins (WV beats W)', idWV.type === 'radio', idWV.type);
+
+            // Test delete — remove VEH and W, restore to backup
+            await AssetPrefixes.save(backup);
+            AssetPrefixes.clearCache();
+            const restored = await AssetPrefixes.getAll();
+            assert('Delete custom prefixes', !restored.some(p => p.prefix === 'VEH'), `back to ${restored.length}`);
+
+            // Test reset to defaults
+            await AssetPrefixes.resetToDefaults();
+            AssetPrefixes.clearCache();
+            const defaults = await AssetPrefixes.getAll();
+            assert('Reset to defaults', defaults.length === 3 && defaults.some(p => p.prefix === 'WV'), `${defaults.length} defaults`);
         } catch (e) {
             assert('Asset Prefixes', false, e.message);
         }
@@ -926,6 +961,81 @@ UI.registerPage('test-harness', async (container) => {
             assert('JSON serialize round-trip', parsed.radios.length === exported.radios.length, `${jsonStr.length} bytes`);
         } catch (e) {
             assert('Export/Import', false, e.message);
+        }
+        await tick();
+
+        // ----- Supervisor Password -----
+        log('🔒 Supervisor Password', 'phase');
+        try {
+            assert('_hashPassword exists', typeof _hashPassword === 'function');
+
+            // Test hash produces consistent SHA-256 hex
+            const hash1 = await _hashPassword('testpass');
+            const hash2 = await _hashPassword('testpass');
+            assert('Hash is consistent', hash1 === hash2, `${hash1.substring(0, 16)}…`);
+            assert('Hash is 64-char hex (SHA-256)', hash1.length === 64 && /^[0-9a-f]+$/.test(hash1));
+
+            // Different passwords produce different hashes
+            const hash3 = await _hashPassword('different');
+            assert('Different passwords → different hashes', hash1 !== hash3);
+
+            // Test save/load password round-trip
+            const prevPw = await DB.getSetting('supervisorPassword', null);
+            await DB.setSetting('supervisorPassword', hash1);
+            const loaded = await DB.getSetting('supervisorPassword', null);
+            assert('Password hash save/load', loaded === hash1);
+
+            // Test verify: correct password matches
+            const verifyHash = await _hashPassword('testpass');
+            assert('Correct password verifies', verifyHash === loaded);
+
+            // Test verify: wrong password fails
+            const wrongHash = await _hashPassword('wrongpass');
+            assert('Wrong password rejected', wrongHash !== loaded);
+
+            // Restore original password state
+            await DB.setSetting('supervisorPassword', prevPw);
+        } catch (e) {
+            assert('Supervisor Password', false, e.message);
+        }
+        await tick();
+
+        // ----- Fleet Card Modal -----
+        log('📻 Fleet Card Modal', 'phase');
+        try {
+            assert('_fleetModalData exists', typeof _fleetModalData === 'object');
+            assert('_showFleetModal exists', typeof _showFleetModal === 'function');
+            const radioCount = (await DB.getAll('radios')).length;
+            const modalKeys = Object.keys(_fleetModalData);
+            assert('Fleet modal data populated', modalKeys.length > 0, `${modalKeys.length} radios`);
+            assert('Fleet modal data matches radio count', modalKeys.length === radioCount, `${modalKeys.length}/${radioCount}`);
+            // Verify data structure for one entry
+            const sampleId = modalKeys[0];
+            const sample = _fleetModalData[sampleId];
+            assert('Fleet modal entry has radio', !!sample && !!sample.radio && sample.radio.id === sampleId);
+            assert('Fleet modal entry has status flags', typeof sample.isOut === 'boolean' && typeof sample.isMaint === 'boolean');
+        } catch (e) {
+            assert('Fleet Card Modal', false, e.message);
+        }
+        await tick();
+
+        // ----- Print Label -----
+        log('🖨️ Print Label', 'phase');
+        try {
+            assert('_printSingleLabel exists', typeof _printSingleLabel === 'function');
+        } catch (e) {
+            assert('Print Label', false, e.message);
+        }
+        await tick();
+
+        // ----- App Branding -----
+        log('🏛️ App Branding', 'phase');
+        try {
+            const title = document.querySelector('#app-header h1');
+            assert('Header shows USPS', title && title.textContent.includes('USPS'), title?.textContent);
+            assert('Browser tab title', document.title.includes('USPS'), document.title);
+        } catch (e) {
+            assert('App Branding', false, e.message);
         }
         await tick();
 
