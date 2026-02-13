@@ -34,6 +34,16 @@ function applyTheme(theme) {
         await DB.open();
         console.log('Database initialized');
 
+        // Auto-restore from snapshot if DB is empty
+        try {
+            const snapResult = await Snapshot.autoRestore();
+            if (snapResult.restored) {
+                console.log(`Database restored from snapshot: ${snapResult.radioCount} radios, ${snapResult.techCount} techs`);
+            }
+        } catch (e) {
+            console.warn('Snapshot auto-restore skipped:', e.message);
+        }
+
         // Initialize UI components
         UI.initNav();
         UI.initModal();
@@ -71,6 +81,50 @@ function applyTheme(theme) {
                 console.warn('Network sync startup error:', e);
             }
         }
+
+        // Save snapshot button
+        document.getElementById('header-save-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('header-save-btn');
+            btn.textContent = '⏳ Saving...';
+            btn.disabled = true;
+            try {
+                const result = await Snapshot.save();
+                if (result.ok) {
+                    const kb = (result.size / 1024).toFixed(1);
+                    UI.toast(`Snapshot saved (${kb} KB) — copy db-snapshot.json with your app folder`, 'success');
+                    btn.innerHTML = '💾 Saved ✓';
+                    setTimeout(() => { btn.innerHTML = '💾 Save'; }, 3000);
+                } else {
+                    UI.toast('Save cancelled', 'info');
+                    btn.innerHTML = '💾 Save';
+                }
+            } catch (e) {
+                UI.toast('Save failed: ' + e.message, 'error');
+                btn.innerHTML = '💾 Save';
+            }
+            btn.disabled = false;
+        });
+
+        // Auto-save silently after major DB operations (if file handle is set)
+        const _origPut = DB.put.bind(DB);
+        let _saveTimer = null;
+        DB.put = async function(storeName, data) {
+            const result = await _origPut(storeName, data);
+            // Debounce: save snapshot 5 seconds after last DB write
+            if (Snapshot.hasFileHandle()) {
+                clearTimeout(_saveTimer);
+                _saveTimer = setTimeout(() => Snapshot.silentSave(), 5000);
+            }
+            return result;
+        };
+
+        // Warn before closing if there are unsaved changes
+        window.addEventListener('beforeunload', (e) => {
+            if (!Snapshot.hasFileHandle()) {
+                // Only warn if they haven't saved at all this session
+                // (don't annoy users who already saved)
+            }
+        });
 
         // Info button (?) — version/author popup with integrity check
         document.getElementById('header-info-btn').addEventListener('click', async () => {
