@@ -618,24 +618,32 @@ UI.registerPage('test-harness', async (container) => {
         // ----- Checkout / Return flow -----
         log('🔄 Checkout & Return Flow', 'phase');
         try {
-            // Find an available radio to test with
-            const allRadios = await DB.getAll('radios');
-            const testRadio = allRadios.find(r => r.status === 'Available');
+            // Use dedicated test badge IDs that won't conflict with simulation data
+            const TEST_BADGE_A = 'TESTBADGE_A';
+            const TEST_BADGE_B = 'TESTBADGE_B';
+
+            // Create fresh test technicians to avoid conflicts
+            await DB.put('technicians', Models.createTechnician({ badgeId: TEST_BADGE_A, firstName: 'Test', lastName: 'AlphaUser' }));
+            await DB.put('technicians', Models.createTechnician({ badgeId: TEST_BADGE_B, firstName: 'Test', lastName: 'BetaUser' }));
+
+            // Find available radios to test with (re-read in case state changed)
+            const freshRadios = await DB.getAll('radios');
+            const testRadio = freshRadios.find(r => r.status === 'Available');
 
             if (testRadio) {
                 // Test checkout
-                const coResult = await Models.checkoutRadio(testRadio.id, 'T0101', 'Test Clerk');
+                const coResult = await Models.checkoutRadio(testRadio.id, TEST_BADGE_A, 'Test Clerk');
                 assert('Checkout radio', coResult.radio.status === 'Checked Out', `${testRadio.id} → Checked Out`);
                 assert('Checkout returns transaction', !!coResult.transaction, `txn id: ${coResult.transaction.id}`);
-                assert('Checkout links technician', coResult.technician.badgeId === 'T0101', coResult.technician.name);
+                assert('Checkout links technician', coResult.technician.badgeId === TEST_BADGE_A, coResult.technician.name);
 
                 // Test double checkout prevention
                 try {
-                    const avail2 = allRadios.find(r => r.status === 'Available' && r.id !== testRadio.id);
+                    const avail2 = freshRadios.find(r => r.status === 'Available' && r.id !== testRadio.id);
                     if (avail2) {
-                        await Models.checkoutRadio(avail2.id, 'T0101', 'Test Clerk');
+                        await Models.checkoutRadio(avail2.id, TEST_BADGE_A, 'Test Clerk');
                         assert('Prevent double checkout', false, 'Should have thrown error');
-                        // Clean up
+                        // Clean up if it didn't throw
                         await Models.returnRadio(avail2.id, 'Good', 'Test Clerk');
                     }
                 } catch (doubleErr) {
@@ -647,10 +655,11 @@ UI.registerPage('test-harness', async (container) => {
                 assert('Return radio', retResult.radio.status === 'Available', `${testRadio.id} → Available`);
                 assert('Return condition tracked', retResult.transaction.condition === 'Good');
 
-                // Test damaged return
-                const testRadio2 = allRadios.find(r => r.id !== testRadio.id && r.status === 'Available');
+                // Test damaged return with a different tech
+                const freshRadios2 = await DB.getAll('radios');
+                const testRadio2 = freshRadios2.find(r => r.id !== testRadio.id && r.status === 'Available');
                 if (testRadio2) {
-                    await Models.checkoutRadio(testRadio2.id, 'T0102', 'Test Clerk');
+                    await Models.checkoutRadio(testRadio2.id, TEST_BADGE_B, 'Test Clerk');
                     const dmgReturn = await Models.returnRadio(testRadio2.id, 'Damaged', 'Test Clerk', 'Cracked display');
                     assert('Damaged return → Maintenance', dmgReturn.radio.status === 'Maintenance', `${testRadio2.id} flagged`);
                     assert('Damaged return flagged for supervisor', dmgReturn.flagForSupervisor === true);
@@ -660,7 +669,7 @@ UI.registerPage('test-harness', async (container) => {
 
                 // Test checkout of non-existent radio
                 try {
-                    await Models.checkoutRadio('FAKE-999', 'T0101', 'Test Clerk');
+                    await Models.checkoutRadio('FAKE-999', TEST_BADGE_A, 'Test Clerk');
                     assert('Checkout non-existent radio', false, 'Should have thrown');
                 } catch (e) {
                     assert('Checkout non-existent radio blocked', e.message.includes('not found'), 'Correctly throws');
@@ -676,6 +685,10 @@ UI.registerPage('test-harness', async (container) => {
             } else {
                 assert('Checkout/Return test', false, 'No available radio found to test');
             }
+
+            // Clean up test technicians
+            await DB.remove('technicians', TEST_BADGE_A);
+            await DB.remove('technicians', TEST_BADGE_B);
         } catch (e) {
             assert('Checkout/Return flow', false, e.message);
         }
