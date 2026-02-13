@@ -8,10 +8,15 @@
  *  1. Saving a db-snapshot.json file in the project folder (one-click or auto)
  *  2. Auto-loading from db-snapshot.json on startup if the local DB is empty
  *  3. Using the File System Access API (Chrome/Edge) for silent re-saves
+ *  4. Keeping a db-emergency.bak file updated every 8 hours as a last-resort backup
  */
 const Snapshot = (() => {
     const SNAPSHOT_FILE = 'db-snapshot.json';
-    let _fileHandle = null; // Persisted handle for silent re-saves
+    const EMERGENCY_FILE = 'db-emergency.bak';
+    const EMERGENCY_INTERVAL_MS = 8 * 60 * 60 * 1000; // 8 hours
+    let _dirHandle = null;   // Directory handle for the app folder
+    let _fileHandle = null;  // File handle for db-snapshot.json (within _dirHandle)
+    let _emergencyTimer = null;
 
     /**
      * Export the full database to a JSON object.
@@ -29,49 +34,61 @@ const Snapshot = (() => {
     }
 
     /**
-     * Read the timestamp from an existing snapshot file handle.
+     * Write JSON string to a named file in the directory handle.
      */
-    async function _readExistingTimestamp() {
-        if (!_fileHandle) return null;
+    async function _writeToDir(fileName, json) {
+        if (!_dirHandle) return false;
+        const fh = await _dirHandle.getFileHandle(fileName, { create: true });
+        const writable = await fh.createWritable();
+        await writable.write(json);
+        await writable.close();
+        return true;
+    }
+
+    /**
+     * Read and parse a named file from the directory handle.
+     */
+    async function _readFromDir(fileName) {
+        if (!_dirHandle) return null;
         try {
-            const file = await _fileHandle.getFile();
+            const fh = await _dirHandle.getFileHandle(fileName);
+            const file = await fh.getFile();
             const text = await file.text();
-            const data = JSON.parse(text);
-            return data?._snapshot?.timestamp || null;
+            return JSON.parse(text);
         } catch (e) {
-            return null;
+            return null; // file doesn't exist or parse error
         }
     }
 
     /**
+     * Read the timestamp from the existing snapshot file.
+     */
+    async function _readExistingTimestamp() {
+        const data = await _readFromDir(SNAPSHOT_FILE);
+        return data?._snapshot?.timestamp || null;
+    }
+
+    /**
      * Save snapshot using File System Access API (Chrome/Edge 86+).
-     * First call shows a "Save As" dialog. Subsequent calls save silently.
-     * Returns true if saved, false if cancelled/unsupported.
+     * First call shows a folder picker. Subsequent calls save silently.
      */
     async function save() {
         const data = await _exportData();
         const json = JSON.stringify(data, null, 2);
 
         // Try File System Access API first (allows silent re-saves)
-        if ('showSaveFilePicker' in window) {
+        if ('showDirectoryPicker' in window) {
             try {
-                if (!_fileHandle) {
-                    _fileHandle = await window.showSaveFilePicker({
-                        suggestedName: SNAPSHOT_FILE,
-                        types: [{
-                            description: 'Database Snapshot',
-                            accept: { 'application/json': ['.json'] }
-                        }]
-                    });
+                if (!_dirHandle) {
+                    _dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 }
-                const writable = await _fileHandle.createWritable();
-                await writable.write(json);
-                await writable.close();
+                await _writeToDir(SNAPSHOT_FILE, json);
                 await DB.setSetting('lastSnapshotTime', new Date().toISOString());
+                // Start the emergency backup timer now that we have a dir handle
+                _startEmergencyTimer();
                 return { ok: true, method: 'fileSystem', size: json.length };
             } catch (e) {
                 if (e.name === 'AbortError') return { ok: false, method: 'cancelled' };
-                // Fall through to download method
                 console.warn('File System Access failed, falling back to download:', e.message);
             }
         }
@@ -91,12 +108,11 @@ const Snapshot = (() => {
     }
 
     /**
-     * Silent re-save (only works if _fileHandle is already set from a previous save).
+     * Silent re-save (only works if _dirHandle is already set from a previous save).
      * Will NOT overwrite the file if it contains newer data than our local DB.
-     * Returns true if saved, false if skipped or no handle.
      */
     async function silentSave() {
-        if (!_fileHandle) return false;
+        if (!_dirHandle) return false;
         try {
             // Check if existing file is newer than our local data
             const localModified = await DB.getLastModified();
@@ -111,9 +127,7 @@ const Snapshot = (() => {
 
             const data = await _exportData();
             const json = JSON.stringify(data, null, 2);
-            const writable = await _fileHandle.createWritable();
-            await writable.write(json);
-            await writable.close();
+            await _writeToDir(SNAPSHOT_FILE, json);
             await DB.setSetting('lastSnapshotTime', new Date().toISOString());
             console.log('Snapshot auto-saved:', (json.length / 1024).toFixed(1) + ' KB');
             return true;
@@ -123,18 +137,103 @@ const Snapshot = (() => {
         }
     }
 
+    // ===== Emergency Backup (.bak) — updated every 8 hours =====
+
+    /**
+     * Write the emergency backup file. No timestamp guard — always overwrites.
+     * This is the safety net; it's always up to date (within 8 hours).
+     */
+    async function _writeEmergencyBackup() {
+        if (!_dirHandle) return false;
+        try {
+            const data = await _exportData();
+            data._emergency = {
+                timestamp: new Date().toISOString(),
+                warning: 'EMERGENCY BACKUP — May be up to 8 hours old. Use only if all other restore methods fail.'
+            };
+            const json = JSON.stringify(data, null, 2);
+            await _writeToDir(EMERGENCY_FILE, json);
+            await DB.setSetting('lastEmergencyBackupTime', new Date().toISOString());
+            console.log('Emergency backup saved:', (json.length / 1024).toFixed(1) + ' KB');
+            return true;
+        } catch (e) {
+            console.warn('Emergency backup failed:', e.message);
+            return false;
+        }
+    }
+
+    /**
+     * Start the 8-hour emergency backup timer.
+     */
+    function _startEmergencyTimer() {
+        if (_emergencyTimer) return; // already running
+        // Write one immediately on connect
+        _writeEmergencyBackup();
+        _emergencyTimer = setInterval(() => {
+            _writeEmergencyBackup();
+        }, EMERGENCY_INTERVAL_MS);
+        console.log('Emergency backup timer started (every 8 hours)');
+    }
+
+    /**
+     * Restore from the emergency backup file.
+     * Returns { restored, radioCount, techCount, timestamp } or { restored: false }.
+     */
+    async function emergencyRestore() {
+        // Try reading from dir handle first
+        let data = await _readFromDir(EMERGENCY_FILE);
+
+        // If no dir handle, try fetching from the app folder
+        if (!data) {
+            try {
+                const resp = await fetch(EMERGENCY_FILE + '?_v=' + Date.now(), { cache: 'no-store' });
+                if (resp.ok) {
+                    const text = await resp.text();
+                    if (text && text.trim().length > 10) {
+                        data = JSON.parse(text);
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        if (!data || (!data.radios && !data.technicians)) {
+            return { restored: false, reason: 'no_emergency_file' };
+        }
+
+        // Strip internal metadata before import
+        const { _snapshot, _emergency, ...importData } = data;
+        await DB.importAll(importData);
+        const radioCount = (data.radios || []).length;
+        const techCount = (data.technicians || []).length;
+        const ts = data._emergency?.timestamp || data._snapshot?.timestamp || 'unknown';
+        return { restored: true, radioCount, techCount, timestamp: ts };
+    }
+
+    /**
+     * Get the timestamp of the last emergency backup.
+     */
+    async function getLastEmergencyTime() {
+        return await DB.getSetting('lastEmergencyBackupTime', null);
+    }
+
+    // ===== Load / Restore =====
+
     /**
      * Try to load db-snapshot.json from the same folder as the app.
      * Returns the parsed data or null if not found.
      */
     async function loadFromFile() {
+        // Try dir handle first
+        let data = await _readFromDir(SNAPSHOT_FILE);
+        if (data) return data;
+
+        // Fallback: fetch from app folder
         try {
             const resp = await fetch(SNAPSHOT_FILE + '?_v=' + Date.now(), { cache: 'no-store' });
             if (!resp.ok) return null;
             const text = await resp.text();
             if (!text || text.trim().length < 10) return null;
-            const data = JSON.parse(text);
-            // Basic validation
+            data = JSON.parse(text);
             if (!data.radios && !data.technicians && !data.settings) return null;
             return data;
         } catch (e) {
@@ -152,28 +251,46 @@ const Snapshot = (() => {
     }
 
     /**
-     * Auto-restore: if DB is empty and snapshot file exists, import it.
+     * Auto-restore: if DB is empty, try snapshot first, then emergency backup.
      * Called on startup.
      */
     async function autoRestore() {
         const empty = await isDbEmpty();
         if (!empty) return { restored: false, reason: 'db_not_empty' };
 
+        // Try snapshot file first
         const data = await loadFromFile();
-        if (!data) return { restored: false, reason: 'no_snapshot_file' };
+        if (data) {
+            await DB.importAll(data);
+            const radioCount = (data.radios || []).length;
+            const techCount = (data.technicians || []).length;
+            const txCount = (data.transactions || []).length;
+            console.log(`Snapshot restored: ${radioCount} radios, ${techCount} techs, ${txCount} transactions`);
+            return {
+                restored: true,
+                source: 'snapshot',
+                radioCount,
+                techCount,
+                txCount,
+                timestamp: data._snapshot?.timestamp || 'unknown'
+            };
+        }
 
-        await DB.importAll(data);
-        const radioCount = (data.radios || []).length;
-        const techCount = (data.technicians || []).length;
-        const txCount = (data.transactions || []).length;
-        console.log(`Snapshot restored: ${radioCount} radios, ${techCount} techs, ${txCount} transactions`);
-        return {
-            restored: true,
-            radioCount,
-            techCount,
-            txCount,
-            timestamp: data._snapshot?.timestamp || 'unknown'
-        };
+        // Try emergency backup as last resort
+        const emergResult = await emergencyRestore();
+        if (emergResult.restored) {
+            console.log(`Emergency backup restored: ${emergResult.radioCount} radios, ${emergResult.techCount} techs`);
+            return {
+                restored: true,
+                source: 'emergency',
+                radioCount: emergResult.radioCount,
+                techCount: emergResult.techCount,
+                txCount: 0,
+                timestamp: emergResult.timestamp
+            };
+        }
+
+        return { restored: false, reason: 'no_files_found' };
     }
 
     /**
@@ -184,10 +301,10 @@ const Snapshot = (() => {
     }
 
     /**
-     * Check if we have an active file handle for silent saves.
+     * Check if we have an active directory handle for silent saves.
      */
     function hasFileHandle() {
-        return !!_fileHandle;
+        return !!_dirHandle;
     }
 
     return {
@@ -198,6 +315,9 @@ const Snapshot = (() => {
         autoRestore,
         getLastSaveTime,
         hasFileHandle,
-        SNAPSHOT_FILE
+        emergencyRestore,
+        getLastEmergencyTime,
+        SNAPSHOT_FILE,
+        EMERGENCY_FILE
     };
 })();

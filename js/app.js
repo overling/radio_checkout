@@ -34,17 +34,18 @@ function applyTheme(theme) {
         await DB.open();
         console.log('Database initialized');
 
-        // Auto-restore from snapshot if DB is empty
+        // Auto-restore from snapshot or emergency backup if DB is empty
         try {
             const snapResult = await Snapshot.autoRestore();
             if (snapResult.restored) {
-                console.log(`Database restored from snapshot: ${snapResult.radioCount} radios, ${snapResult.techCount} techs`);
+                const src = snapResult.source === 'emergency' ? 'emergency backup (may be up to 8 hours old)' : 'snapshot file';
+                console.log(`Database restored from ${src}: ${snapResult.radioCount} radios, ${snapResult.techCount} techs`);
                 setTimeout(() => {
-                    UI.toast(`Database loaded from snapshot file: ${snapResult.radioCount} radios, ${snapResult.techCount} technicians restored ✅`, 'success', 6000);
+                    UI.toast(`Database loaded from ${src}: ${snapResult.radioCount} radios, ${snapResult.techCount} technicians restored ✅`, 'success', 6000);
                 }, 1000);
             }
         } catch (e) {
-            console.warn('Snapshot auto-restore skipped:', e.message);
+            console.warn('Auto-restore skipped:', e.message);
         }
 
         // Initialize UI components
@@ -206,6 +207,11 @@ function applyTheme(theme) {
             const badge = info.valid
                 ? '<span style="color:var(--success);font-weight:700;">✅ Verified Original</span>'
                 : '<span style="color:var(--danger);font-weight:700;">⚠️ TAMPERED — This is not the original software</span>';
+            const emergTime = await Snapshot.getLastEmergencyTime();
+            const emergInfo = emergTime
+                ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">Last emergency backup: ${new Date(emergTime).toLocaleString()}</div>`
+                : '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">No emergency backup yet — connect your folder first</div>';
+
             UI.showModal('About USPS Asset Tracker', `
                 <div style="text-align:center;line-height:2;">
                     <div style="font-size:2.5rem;margin-bottom:0.25rem;">📻</div>
@@ -218,8 +224,44 @@ function applyTheme(theme) {
                     <div style="font-size:0.85rem;margin-top:0.25rem;">${badge}</div>
                     <hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0;">
                     <button class="btn btn-primary" onclick="UI.closeModal(); UI.navigateTo('help');" style="margin-top:0.25rem;">📖 Open Instruction Manual</button>
+                    <hr style="border:none;border-top:1px solid var(--border);margin:0.75rem 0 0.5rem;">
+                    <button id="emergency-restore-btn" class="btn" style="background:var(--danger);color:#fff;margin-top:0.25rem;font-size:0.85rem;">
+                        🚨 Emergency Database Restoration
+                    </button>
+                    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.15rem;">May be up to 8 hours old — use only if all else fails</div>
+                    ${emergInfo}
                 </div>
             `);
+
+            // Wire up emergency restore button
+            setTimeout(() => {
+                const emergBtn = document.getElementById('emergency-restore-btn');
+                if (emergBtn) {
+                    emergBtn.addEventListener('click', async () => {
+                        if (!confirm('⚠️ EMERGENCY RESTORE\n\nThis will replace your current database with the emergency backup file (db-emergency.bak).\n\nThis backup may be up to 8 HOURS OLD. Some recent data may be lost.\n\nOnly use this if:\n• Your main database is empty or corrupted\n• The snapshot file (db-snapshot.json) is missing\n• The network backup folder is unavailable\n\nAre you sure you want to continue?')) return;
+                        if (!confirm('⚠️ FINAL WARNING\n\nThis will OVERWRITE your current database.\n\nClick OK to proceed with emergency restoration.')) return;
+
+                        emergBtn.textContent = '⏳ Restoring...';
+                        emergBtn.disabled = true;
+                        try {
+                            const result = await Snapshot.emergencyRestore();
+                            if (result.restored) {
+                                UI.closeModal();
+                                UI.toast(`Emergency restore complete: ${result.radioCount} radios, ${result.techCount} technicians restored from ${new Date(result.timestamp).toLocaleString()}`, 'success', 8000);
+                                setTimeout(() => location.reload(), 2000);
+                            } else {
+                                UI.toast('No emergency backup file found. Make sure you have connected your app folder at least once.', 'error', 6000);
+                                emergBtn.textContent = '🚨 Emergency Database Restoration';
+                                emergBtn.disabled = false;
+                            }
+                        } catch (e) {
+                            UI.toast('Emergency restore failed: ' + e.message, 'error');
+                            emergBtn.textContent = '🚨 Emergency Database Restoration';
+                            emergBtn.disabled = false;
+                        }
+                    });
+                }
+            }, 100);
         });
 
         // Periodic authorship integrity check (every 5 min)

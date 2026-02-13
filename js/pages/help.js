@@ -474,6 +474,23 @@ UI.registerPage('help', async (container) => {
                             </table>
                         </div>
                     </div>
+                    <div class="help-step">
+                        <div class="help-step-icon">🚨</div>
+                        <div>
+                            <strong>Emergency Backup (db-emergency.bak):</strong> A safety net that runs silently in the background.
+                            <ul>
+                                <li>The app saves a copy of your database to <code>db-emergency.bak</code> every <strong>8 hours</strong></li>
+                                <li>This file is <strong>never used for automatic restore</strong> — it's only used if everything else fails</li>
+                                <li>To use it: click the <strong>?</strong> button in the top bar → click <strong>🚨 Emergency Database Restoration</strong></li>
+                                <li>You'll get two warning prompts before it restores — this is intentional to prevent accidents</li>
+                                <li>The restored data <strong>may be up to 8 hours old</strong> — some recent changes could be missing</li>
+                            </ul>
+                            <div style="background:var(--danger-light, #fff3f3);border:1px solid var(--danger, red);border-radius:6px;padding:0.5rem 0.75rem;margin-top:0.5rem;font-size:0.85rem;">
+                                <strong>When to use emergency restore:</strong><br>
+                                Only if your database is empty/corrupted AND the snapshot file is missing AND the network backup folder is unavailable. This is the last resort.
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
