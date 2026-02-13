@@ -56,20 +56,6 @@ function applyTheme(theme) {
             await DB.setSetting('batteryServiceDayThreshold', 365);
         }
 
-        // Show a hint banner if opened via file:// (camera won't work without a server)
-        if (window.location.protocol === 'file:') {
-            const banner = document.createElement('div');
-            banner.id = 'file-protocol-banner';
-            banner.innerHTML = `
-                <div style="background:var(--warning);color:#000;padding:0.6rem 1rem;text-align:center;font-size:0.85rem;font-weight:600;display:flex;align-items:center;justify-content:center;gap:0.75rem;flex-wrap:wrap;">
-                    <span>⚠️ Camera scanning unavailable on file:// URLs.</span>
-                    <span style="font-weight:400;">Double-click <code style="background:rgba(0,0,0,0.15);padding:0.15rem 0.4rem;border-radius:3px;">start.bat</code> for camera support. USB scanners work either way.</span>
-                    <button onclick="this.parentElement.parentElement.remove()" style="background:rgba(0,0,0,0.2);border:none;color:#000;padding:0.2rem 0.6rem;border-radius:3px;cursor:pointer;font-size:0.8rem;">✕ Dismiss</button>
-                </div>
-            `;
-            document.body.insertBefore(banner, document.body.firstChild);
-        }
-
         // Start auto-backup scheduler
         AutoBackup.start();
 
