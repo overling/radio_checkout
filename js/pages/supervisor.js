@@ -1,18 +1,74 @@
 /**
  * Supervisor Dashboard - Overview of all alerts, overdue radios, flagged items,
- * email notifications, and network sync settings
+ * email notifications, and network sync settings.
+ * Password-protected: stored in IndexedDB under 'supervisorPassword'.
  */
+
+// Session flag — once authenticated, stay unlocked until page reload
+let _supervisorUnlocked = false;
+
+// Simple hash using SubtleCrypto (SHA-256)
+async function _hashPassword(pw) {
+    const data = new TextEncoder().encode(pw);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 UI.registerPage('supervisor', async (container) => {
+    // ===== Password gate =====
+    const storedHash = await DB.getSetting('supervisorPassword', null);
+
+    if (!_supervisorUnlocked) {
+        // If no password set yet, let them in and prompt to create one
+        if (!storedHash) {
+            _supervisorUnlocked = true;
+            // Fall through to dashboard
+        } else {
+            // Show password prompt
+            container.innerHTML = `
+                <div style="max-width:360px;margin:3rem auto;text-align:center;">
+                    <h2 class="page-title">🔒 Supervisor Dashboard</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:1.5rem;">Enter the supervisor password to continue.</p>
+                    <input type="password" id="sv-pw-input" placeholder="Password" autocomplete="off"
+                        style="width:100%;padding:0.7rem;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:1rem;margin-bottom:0.75rem;background:var(--input-bg);color:var(--text);">
+                    <div id="sv-pw-error" style="color:var(--danger);font-size:0.8rem;margin-bottom:0.5rem;display:none;">Incorrect password</div>
+                    <button class="btn btn-primary" id="sv-pw-submit" style="width:100%;">🔓 Unlock</button>
+                    <p style="color:var(--text-muted);font-size:0.7rem;margin-top:1rem;">Password can be changed inside the dashboard.</p>
+                </div>
+            `;
+            const pwInput = document.getElementById('sv-pw-input');
+            const pwError = document.getElementById('sv-pw-error');
+
+            async function tryUnlock() {
+                const entered = pwInput.value;
+                const enteredHash = await _hashPassword(entered);
+                if (enteredHash === storedHash) {
+                    _supervisorUnlocked = true;
+                    UI.navigateTo('supervisor');
+                } else {
+                    pwError.style.display = 'block';
+                    pwInput.value = '';
+                    pwInput.focus();
+                }
+            }
+
+            document.getElementById('sv-pw-submit').addEventListener('click', tryUnlock);
+            pwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+            setTimeout(() => pwInput.focus(), 100);
+            return;
+        }
+    }
+
+    // ===== Dashboard content (authenticated) =====
     const radioStats = await Models.getRadioStats();
     const batteryStats = await Models.getBatteryStats();
     const transactions = await DB.getAll('transactions');
     const radios = await DB.getAll('radios');
     const auditLog = await DB.getAll('auditLog');
 
-    // Load email and sync settings
     const emailContacts = await DB.getSetting('emailContacts', []);
     const emailMessage = await DB.getSetting('overdueEmailMessage', 'The following radios are overdue and have not been returned within the allowed time. Please follow up with the assigned technicians.');
-    const syncSettings = typeof NetworkSync !== 'undefined' ? await NetworkSync.getSettings() : { enabled: false, networkPath: '', intervalMinutes: 15 };
+    const syncSettings = typeof NetworkSync !== 'undefined' ? await NetworkSync.getSettings() : { enabled: false, networkPath: '', intervalHours: 8 };
 
     container.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem;">
@@ -20,6 +76,7 @@ UI.registerPage('supervisor', async (container) => {
             <div style="display:flex;gap:0.5rem;">
                 <button class="btn btn-outline" onclick="UI.navigateTo('assets')">📦 Assets</button>
                 <button class="btn btn-outline" onclick="UI.navigateTo('export')">💾 Export</button>
+                <button class="btn btn-outline" onclick="UI.navigateTo('test-harness')" style="opacity:0.7;">🧪 Test</button>
             </div>
         </div>
 
@@ -152,6 +209,33 @@ UI.registerPage('supervisor', async (container) => {
                 <div id="sv-sync-file-list" style="color:var(--text-muted);">Loading...</div>
             </div>
             <div id="sv-sync-info" style="font-size:0.8rem;color:var(--text-muted);"></div>
+        </div>
+
+        <!-- Password & Security -->
+        <div class="card no-print">
+            <div class="card-header"><h3>🔒 Dashboard Password</h3></div>
+            <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.75rem;">
+                ${storedHash ? 'Password is set. Enter current password to change it.' : '⚠️ No password set — anyone can access this dashboard. Set one below.'}
+            </p>
+            ${storedHash ? `
+            <div class="form-group">
+                <label for="sv-pw-current">Current Password</label>
+                <input type="password" id="sv-pw-current" placeholder="Current password" autocomplete="off">
+            </div>` : ''}
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="sv-pw-new">New Password</label>
+                    <input type="password" id="sv-pw-new" placeholder="New password" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="sv-pw-confirm">Confirm New Password</label>
+                    <input type="password" id="sv-pw-confirm" placeholder="Confirm password" autocomplete="off">
+                </div>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button class="btn btn-primary" id="sv-pw-change">🔑 ${storedHash ? 'Change' : 'Set'} Password</button>
+                ${storedHash ? '<button class="btn btn-outline" id="sv-pw-remove" style="color:var(--danger);">🗑️ Remove Password</button>' : ''}
+            </div>
         </div>
 
         <div id="sv-overdue"></div>
@@ -471,6 +555,46 @@ UI.registerPage('supervisor', async (container) => {
         btn.textContent = '🩺 Check Integrity';
         refreshSyncIndicators();
     });
+
+    // ===== Password change/set/remove =====
+    document.getElementById('sv-pw-change').addEventListener('click', async () => {
+        const newPw = document.getElementById('sv-pw-new').value;
+        const confirmPw = document.getElementById('sv-pw-confirm').value;
+
+        if (!newPw) { UI.toast('Enter a new password', 'error'); return; }
+        if (newPw !== confirmPw) { UI.toast('Passwords do not match', 'error'); return; }
+        if (newPw.length < 3) { UI.toast('Password must be at least 3 characters', 'error'); return; }
+
+        // If changing (not first-time set), verify current password
+        if (storedHash) {
+            const currentPw = document.getElementById('sv-pw-current').value;
+            const currentHash = await _hashPassword(currentPw);
+            if (currentHash !== storedHash) {
+                UI.toast('Current password is incorrect', 'error');
+                return;
+            }
+        }
+
+        const newHash = await _hashPassword(newPw);
+        await DB.setSetting('supervisorPassword', newHash);
+        UI.toast('Supervisor password saved', 'success');
+        setTimeout(() => UI.navigateTo('supervisor'), 500);
+    });
+
+    if (document.getElementById('sv-pw-remove')) {
+        document.getElementById('sv-pw-remove').addEventListener('click', async () => {
+            const currentPw = document.getElementById('sv-pw-current').value;
+            const currentHash = await _hashPassword(currentPw);
+            if (currentHash !== storedHash) {
+                UI.toast('Enter current password to remove it', 'error');
+                return;
+            }
+            await DB.setSetting('supervisorPassword', null);
+            _supervisorUnlocked = true;
+            UI.toast('Password removed — dashboard is now open to everyone', 'success');
+            setTimeout(() => UI.navigateTo('supervisor'), 500);
+        });
+    }
 
     // Overdue radios
     if (radioStats.overdueList.length > 0) {
