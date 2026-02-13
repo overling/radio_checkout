@@ -73,6 +73,19 @@ function applyTheme(theme) {
         // Start auto-backup scheduler
         AutoBackup.start();
 
+        // Network sync: try loading from network on startup, then start periodic push
+        if (typeof NetworkSync !== 'undefined') {
+            try {
+                const syncResult = await NetworkSync.loadOnStartup();
+                if (syncResult.source === 'network') {
+                    console.log('Database loaded from network backup');
+                }
+                NetworkSync.start();
+            } catch (e) {
+                console.warn('Network sync startup error:', e);
+            }
+        }
+
         // Navigate to home
         UI.navigateTo('home');
 

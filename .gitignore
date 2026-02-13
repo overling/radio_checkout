@@ -8,3 +8,6 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# Database backup files
+data/
