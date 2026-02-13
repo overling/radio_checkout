@@ -69,16 +69,13 @@ function applyTheme(theme) {
         // Start auto-backup scheduler
         AutoBackup.start();
 
-        // Network sync: try loading from network on startup, then start periodic push
+        // Folder sync: start periodic timer if enabled and handle is set
+        // (Handle requires user to click "Choose Folder" each session — browser security)
         if (typeof NetworkSync !== 'undefined') {
             try {
-                const syncResult = await NetworkSync.loadOnStartup();
-                if (syncResult.source === 'network') {
-                    console.log('Database loaded from network backup');
-                }
-                NetworkSync.start();
+                NetworkSync.start(); // Will only run timer if enabled + handle exists
             } catch (e) {
-                console.warn('Network sync startup error:', e);
+                console.warn('Folder sync startup:', e.message);
             }
         }
 

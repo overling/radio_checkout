@@ -1,42 +1,38 @@
 /**
  * Network Sync Module
- * Periodically pushes the IndexedDB database as JSON to local dual backups (A/B) + network folder.
- * On startup, attempts to load from network first; falls back to newest valid local backup.
+ * Periodically saves the IndexedDB database as JSON to a user-chosen folder
+ * (local or network share) using the File System Access API (Chrome/Edge 86+).
  *
- * Architecture:
- *   Browser  →  POST /api/sync  →  PowerShell server  →  writes to local A/B + network
- *   Browser  ←  GET  /api/sync  ←  PowerShell server  ←  reads from network → fallback local
+ * How it works:
+ *   1. User clicks "Choose Folder" in Supervisor → picks a folder (local or \\server\share)
+ *   2. Browser gets a directory handle with write permission
+ *   3. On a timer (1/4/8/16 hours), the DB is exported and written to that folder
+ *   4. Uses dual A/B backup files for crash safety
+ *   5. On startup, if local DB is empty, tries to load from the sync folder
  *
- * Features:
- *   - Dual local backups (A/B alternation) for crash safety
- *   - Retry on failure: up to 3 retries at 2-minute intervals
- *   - Integrity check: validates local files periodically (every 8 hours)
- *   - Status tracking: last push time, success/fail, file health
+ * No server required — the browser writes files directly.
  *
  * Settings stored in IndexedDB under 'networkSync':
- *   { enabled, networkPath, intervalHours, lastPush, lastPushStatus,
- *     lastIntegrityCheck, retryCount }
+ *   { enabled, folderName, intervalHours, lastPush, lastPushStatus, nextSlot }
  */
 const NetworkSync = (() => {
     let syncTimer = null;
-    let retryTimer = null;
-    let integrityTimer = null;
+    let _dirHandle = null; // File System Access API directory handle
+
+    const FILE_A = 'asset-tracker-backup-A.json';
+    const FILE_B = 'asset-tracker-backup-B.json';
 
     const DEFAULTS = {
         enabled: false,
-        networkPath: '',
-        intervalHours: 8,         // push interval in hours: 1, 4, 8, 16
+        folderName: '',           // display name of chosen folder
+        intervalHours: 8,
         lastPush: null,
         lastPushStatus: null,     // 'success' | 'error: ...'
-        lastNetworkOk: null,      // true/false — did network write succeed last time?
-        lastIntegrityCheck: null,
-        integrityOk: null,        // true/false/null — are local files clean?
+        nextSlot: 'A',            // alternates A/B
         retryCount: 0
     };
 
     const MAX_RETRIES = 3;
-    const RETRY_INTERVAL_MS = 2 * 60 * 1000;      // 2 minutes
-    const INTEGRITY_INTERVAL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
     async function getSettings() {
         const saved = await DB.getSetting('networkSync', null);
@@ -48,210 +44,219 @@ const NetworkSync = (() => {
         await DB.setSetting('networkSync', settings);
     }
 
-    // Push local DB to server (dual local A/B + network)
+    /**
+     * Check if File System Access API is available.
+     */
+    function isSupported() {
+        return 'showDirectoryPicker' in window;
+    }
+
+    /**
+     * Prompt user to pick a folder. Returns true if successful.
+     * The handle is kept in memory for the session. After a page reload
+     * the user must re-pick (browser security requirement).
+     */
+    async function chooseFolder() {
+        if (!isSupported()) {
+            return { ok: false, error: 'File System Access API not supported. Use Chrome or Edge.' };
+        }
+        try {
+            _dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            const settings = await getSettings();
+            settings.enabled = true;
+            settings.folderName = _dirHandle.name;
+            await saveSettings(settings);
+            return { ok: true, name: _dirHandle.name };
+        } catch (e) {
+            if (e.name === 'AbortError') return { ok: false, error: 'Cancelled' };
+            return { ok: false, error: e.message };
+        }
+    }
+
+    /**
+     * Check if we have an active folder handle this session.
+     */
+    function hasHandle() {
+        return !!_dirHandle;
+    }
+
+    /**
+     * Write a JSON string to a file in the chosen directory.
+     */
+    async function _writeFile(fileName, jsonStr) {
+        if (!_dirHandle) throw new Error('No folder selected — click "Choose Folder" first');
+        const fileHandle = await _dirHandle.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(jsonStr);
+        await writable.close();
+    }
+
+    /**
+     * Read a JSON file from the chosen directory. Returns parsed object or null.
+     */
+    async function _readFile(fileName) {
+        if (!_dirHandle) return null;
+        try {
+            const fileHandle = await _dirHandle.getFileHandle(fileName);
+            const file = await fileHandle.getFile();
+            const text = await file.text();
+            return JSON.parse(text);
+        } catch (e) {
+            return null; // file doesn't exist or is invalid
+        }
+    }
+
+    /**
+     * Push database to the chosen folder (dual A/B backup).
+     */
     async function pushToNetwork() {
         const settings = await getSettings();
-        if (!settings.enabled || !settings.networkPath) return { ok: false, error: 'Sync not configured' };
+        if (!settings.enabled) return { ok: false, error: 'Sync not enabled' };
+        if (!_dirHandle) return { ok: false, error: 'No folder handle — re-select folder in Supervisor' };
 
         try {
             const data = await DB.exportAll();
             const payload = {
-                timestamp: new Date().toISOString(),
-                networkPath: settings.networkPath,
-                data: data
+                _sync: {
+                    timestamp: new Date().toISOString(),
+                    slot: settings.nextSlot || 'A',
+                    source: location.hostname || 'local'
+                },
+                ...data
             };
+            const json = JSON.stringify(payload, null, 2);
+            const fileName = settings.nextSlot === 'B' ? FILE_B : FILE_A;
 
-            const resp = await fetch('/api/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            await _writeFile(fileName, json);
 
-            if (!resp.ok) {
-                const text = await resp.text();
-                throw new Error(text || `HTTP ${resp.status}`);
-            }
-
-            const result = await resp.json();
+            // Update settings
             settings.lastPush = new Date().toISOString();
             settings.lastPushStatus = 'success';
-            settings.lastNetworkOk = result.networkOk;
+            settings.nextSlot = settings.nextSlot === 'A' ? 'B' : 'A';
             settings.retryCount = 0;
             await saveSettings(settings);
-            cancelRetry();
-            console.log(`Sync push OK → local slot ${result.localSlot}, network=${result.networkOk}`);
 
-            // If local succeeded but network failed, schedule retry
-            if (!result.networkOk && result.networkError) {
-                console.warn('Network write failed, scheduling retry:', result.networkError);
-                scheduleRetry();
-                return { ok: true, result, networkFailed: true };
-            }
-
-            return { ok: true, result };
+            const kb = (json.length / 1024).toFixed(1);
+            console.log(`Sync push OK → ${fileName} (${kb} KB)`);
+            return { ok: true, file: fileName, size: json.length };
         } catch (e) {
             settings.lastPushStatus = 'error: ' + e.message;
-            settings.lastNetworkOk = false;
             settings.retryCount = (settings.retryCount || 0) + 1;
             await saveSettings(settings);
             console.error('Sync push failed:', e.message);
-
-            // Schedule retry if under limit
-            if (settings.retryCount < MAX_RETRIES) {
-                scheduleRetry();
-            }
-
             return { ok: false, error: e.message };
         }
     }
 
-    // Retry logic
-    function scheduleRetry() {
-        cancelRetry();
-        retryTimer = setTimeout(async () => {
-            const settings = await getSettings();
-            if (settings.retryCount >= MAX_RETRIES) {
-                console.warn(`Sync retry limit reached (${MAX_RETRIES}). Giving up until next scheduled push.`);
-                return;
-            }
-            console.log(`Sync retry attempt ${settings.retryCount + 1}/${MAX_RETRIES}...`);
-            await pushToNetwork();
-        }, RETRY_INTERVAL_MS);
-        console.log(`Retry scheduled in ${RETRY_INTERVAL_MS / 60000} minutes`);
-    }
+    /**
+     * Read the newest valid backup from the chosen folder.
+     * Returns { data, timestamp, file } or null.
+     */
+    async function pullFromFolder() {
+        if (!_dirHandle) return null;
 
-    function cancelRetry() {
-        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-    }
+        const a = await _readFile(FILE_A);
+        const b = await _readFile(FILE_B);
 
-    // Pull from network — returns the parsed data or null
-    async function pullFromNetwork() {
-        const settings = await getSettings();
-        if (!settings.enabled || !settings.networkPath) return null;
+        if (!a && !b) return null;
 
-        try {
-            const resp = await fetch('/api/sync');
-            if (!resp.ok) {
-                const text = await resp.text();
-                throw new Error(text || `HTTP ${resp.status}`);
-            }
+        // Pick the newest
+        const tsA = a?._sync?.timestamp ? new Date(a._sync.timestamp) : new Date(0);
+        const tsB = b?._sync?.timestamp ? new Date(b._sync.timestamp) : new Date(0);
 
-            const payload = await resp.json();
-            if (!payload || !payload.data) throw new Error('Invalid backup format');
-            return payload;
-        } catch (e) {
-            console.warn('Sync pull failed:', e.message);
-            return null;
+        if (a && (!b || tsA >= tsB)) {
+            return { data: a, timestamp: a._sync?.timestamp, file: FILE_A };
         }
+        return { data: b, timestamp: b._sync?.timestamp, file: FILE_B };
     }
 
-    // Check integrity of local backup files via server
-    async function checkIntegrity() {
-        try {
-            const resp = await fetch('/api/sync/status');
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            const status = await resp.json();
-
-            const aOk = status.slotA && status.slotA.ok;
-            const bOk = status.slotB && status.slotB.ok;
-            const allOk = aOk || bOk; // At least one valid backup
-
-            const settings = await getSettings();
-            settings.lastIntegrityCheck = new Date().toISOString();
-            settings.integrityOk = allOk;
-            await saveSettings(settings);
-
-            console.log(`Integrity check: A=${aOk ? 'OK' : 'BAD'}, B=${bOk ? 'OK' : 'BAD'} → ${allOk ? 'CLEAN' : 'WARNING'}`);
-            return { ok: allOk, slotA: status.slotA, slotB: status.slotB, network: status.network };
-        } catch (e) {
-            console.error('Integrity check failed:', e.message);
-            return { ok: false, error: e.message };
-        }
-    }
-
-    // Get full status (for UI display)
-    async function getStatus() {
-        try {
-            const resp = await fetch('/api/sync/status');
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            return await resp.json();
-        } catch (e) {
-            return { error: e.message };
-        }
-    }
-
-    // Open the local data folder in Windows Explorer
-    async function openLocalFolder() {
-        try {
-            const status = await getStatus();
-            const dir = status.dataDir;
-            if (dir) {
-                await fetch('/api/open-folder?path=' + encodeURIComponent(dir));
-            }
-        } catch (e) {
-            console.error('Could not open folder:', e.message);
-        }
-    }
-
-    // On startup: try network first, fall back to newest valid local
+    /**
+     * On startup: if DB is empty and sync is enabled, try to load from folder.
+     * User must re-pick the folder each session (browser security), so this
+     * only works if chooseFolder() was called first.
+     */
     async function loadOnStartup() {
         const settings = await getSettings();
-        if (!settings.enabled || !settings.networkPath) {
-            console.log('Network sync disabled — using local DB only');
+        if (!settings.enabled) {
             return { source: 'local', reason: 'sync disabled' };
+        }
+        if (!_dirHandle) {
+            return { source: 'local', reason: 'no folder handle this session' };
         }
 
         try {
-            const networkData = await pullFromNetwork();
-            if (!networkData || !networkData.data) {
-                console.log('Network backup unavailable — using local DB');
-                return { source: 'local', reason: 'network unavailable' };
+            const backup = await pullFromFolder();
+            if (!backup || !backup.data) {
+                return { source: 'local', reason: 'no backup files found' };
             }
 
-            const localTimestamp = await DB.getSetting('lastModified', null);
-            const networkTimestamp = networkData.timestamp;
-
-            if (localTimestamp && networkTimestamp && new Date(localTimestamp) >= new Date(networkTimestamp)) {
-                console.log('Local DB is same or newer than network — keeping local');
-                return { source: 'local', reason: 'local is newer' };
+            const localRadios = await DB.count('radios');
+            if (localRadios > 0) {
+                return { source: 'local', reason: 'local DB has data' };
             }
 
-            await DB.importAll(networkData.data);
-            console.log('Loaded database from network backup (timestamp: ' + networkTimestamp + ')');
-            return { source: 'network', timestamp: networkTimestamp };
+            // DB is empty, restore from backup
+            const { _sync, ...importData } = backup.data;
+            await DB.importAll(importData);
+            console.log(`Loaded database from sync folder: ${backup.file} (${backup.timestamp})`);
+            return { source: 'folder', timestamp: backup.timestamp, file: backup.file };
         } catch (e) {
-            console.error('Failed to load from network, using local:', e);
+            console.error('Failed to load from sync folder:', e);
             return { source: 'local', reason: 'error: ' + e.message };
         }
     }
 
-    // Start periodic sync + integrity check timers
+    /**
+     * Get status info for UI display.
+     */
+    async function getStatus() {
+        const settings = await getSettings();
+        let slotA = null, slotB = null;
+
+        if (_dirHandle) {
+            const a = await _readFile(FILE_A);
+            const b = await _readFile(FILE_B);
+            slotA = a ? { ok: true, timestamp: a._sync?.timestamp } : { ok: false };
+            slotB = b ? { ok: true, timestamp: b._sync?.timestamp } : { ok: false };
+        }
+
+        return {
+            enabled: settings.enabled,
+            folderName: settings.folderName,
+            hasHandle: !!_dirHandle,
+            intervalHours: settings.intervalHours,
+            lastPush: settings.lastPush,
+            lastPushStatus: settings.lastPushStatus,
+            nextSlot: settings.nextSlot,
+            slotA,
+            slotB
+        };
+    }
+
+    /**
+     * Start periodic sync timer.
+     */
     function start() {
         stop();
         getSettings().then(settings => {
-            if (!settings.enabled || !settings.networkPath) return;
+            if (!settings.enabled || !_dirHandle) return;
 
             const hours = settings.intervalHours || 8;
             const ms = hours * 60 * 60 * 1000;
             syncTimer = setInterval(async () => {
                 console.log('Periodic sync push...');
-                await pushToNetwork();
+                const result = await pushToNetwork();
+                if (!result.ok && result.error) {
+                    console.warn('Periodic sync failed:', result.error);
+                }
             }, ms);
 
-            // Integrity check every 8 hours
-            integrityTimer = setInterval(async () => {
-                console.log('Periodic integrity check...');
-                await checkIntegrity();
-            }, INTEGRITY_INTERVAL_MS);
-
-            console.log(`Network sync started: every ${hours}h → ${settings.networkPath}`);
+            console.log(`Folder sync started: every ${hours}h → "${settings.folderName}"`);
         });
     }
 
     function stop() {
         if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
-        if (integrityTimer) { clearInterval(integrityTimer); integrityTimer = null; }
-        cancelRetry();
     }
 
     function restart() {
@@ -259,18 +264,32 @@ const NetworkSync = (() => {
         start();
     }
 
+    /**
+     * Disable sync entirely.
+     */
+    async function disable() {
+        stop();
+        _dirHandle = null;
+        const settings = await getSettings();
+        settings.enabled = false;
+        settings.folderName = '';
+        await saveSettings(settings);
+    }
+
     return {
         getSettings,
         saveSettings,
+        isSupported,
+        chooseFolder,
+        hasHandle,
         pushToNetwork,
-        pullFromNetwork,
+        pullFromFolder,
         loadOnStartup,
-        checkIntegrity,
         getStatus,
-        openLocalFolder,
         start,
         stop,
         restart,
+        disable,
         DEFAULTS,
         MAX_RETRIES
     };
