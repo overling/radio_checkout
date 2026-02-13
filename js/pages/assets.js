@@ -1,6 +1,50 @@
 /**
  * Asset Management Page - Add/Edit Radios, Batteries, Tools
  */
+
+// Print a single label — generate code in main window, then open print window with rendered image
+async function _printSingleLabel(assetId, displayLabel, codeType) {
+    let codeHtml = '';
+
+    if (codeType === 'barcode') {
+        // Render barcode to a temporary SVG in main window, then serialize
+        const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        document.body.appendChild(tempSvg);
+        Scanner.generateBarcode(tempSvg, assetId);
+        codeHtml = tempSvg.outerHTML;
+        tempSvg.remove();
+    } else {
+        // Render QR to a temporary canvas, convert to data URL
+        const tempCanvas = document.createElement('canvas');
+        await Scanner.generateQRToCanvas(tempCanvas, assetId, 180);
+        const dataUrl = tempCanvas.toDataURL('image/png');
+        codeHtml = `<img src="${dataUrl}" style="display:block;margin:0 auto;">`;
+    }
+
+    const printWin = window.open('', '_blank', 'width=400,height=400');
+    if (!printWin) { UI.toast('Pop-up blocked — allow pop-ups to print', 'error'); return; }
+
+    printWin.document.write(`<!DOCTYPE html>
+        <html><head><title>Print Label: ${assetId}</title>
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 1rem; margin: 0; }
+            .label { display: inline-block; padding: 0.75rem; border: 2px dashed #ccc; border-radius: 8px; }
+            .label-text { font-size: 14px; font-weight: 700; margin-top: 0.5rem; }
+            @media print { .no-print { display: none !important; } .label { border: none; } }
+        </style>
+        </head><body>
+        <div class="label">
+            ${codeHtml}
+            <div class="label-text">${displayLabel}</div>
+        </div>
+        <div class="no-print" style="margin-top:1rem;">
+            <button onclick="window.print()" style="padding:0.5rem 1.5rem;font-size:1rem;cursor:pointer;">🖨️ Print</button>
+            <button onclick="window.close()" style="padding:0.5rem 1rem;font-size:1rem;cursor:pointer;margin-left:0.5rem;">Close</button>
+        </div>
+        </body></html>`);
+    printWin.document.close();
+    setTimeout(() => printWin.print(), 300);
+}
 UI.registerPage('assets', async (container) => {
     container.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem;">
@@ -159,7 +203,8 @@ function showAddRadioModal() {
         </div>
         <div class="form-group">
             <label for="ar-id">Radio ID *</label>
-            <input type="text" id="ar-id" placeholder="e.g. WV_MAINT_01 or R-001" required>
+            <input type="text" id="ar-id" placeholder="e.g. WV-041 or WV_MAINT_01" required>
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem;">💡 IDs starting with <strong>WV</strong> are auto-detected by the scanner. Other IDs work but require a DB lookup.</div>
         </div>
         <div class="form-row">
             <div class="form-group">
@@ -179,9 +224,17 @@ function showAddRadioModal() {
             <label for="ar-notes">Notes</label>
             <textarea id="ar-notes" rows="2"></textarea>
         </div>
+        <div class="form-group">
+            <label for="ar-print-type">Label Type (for Print)</label>
+            <select id="ar-print-type">
+                <option value="qr">QR Code</option>
+                <option value="barcode">Barcode (Code 128)</option>
+            </select>
+        </div>
     `, `
         <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
         <button class="btn btn-primary" id="ar-save-btn">Save Radio</button>
+        <button class="btn btn-outline" id="ar-save-print-btn" style="display:none;">🖨️ Save & Print Label</button>
     `);
 
     // Label generator
@@ -221,12 +274,40 @@ function showAddRadioModal() {
 
         UI.closeModal();
         UI.toast('Radio added successfully', 'success');
-        // Offer to print label for the new radio
-        if (window.confirm(`Radio "${id}" added.\n\nGo to Print Codes to print a label for it?`)) {
-            UI.navigateTo('print-codes');
-        } else {
-            UI.navigateTo('assets');
-        }
+        UI.navigateTo('assets');
+    });
+
+    // Save & Print Label
+    document.getElementById('ar-save-print-btn').addEventListener('click', async () => {
+        const id = document.getElementById('ar-id').value.trim();
+        if (!id) { UI.toast('Radio ID is required', 'error'); return; }
+
+        const existing = await DB.get('radios', id);
+        if (existing) { UI.toast('A radio with this ID already exists', 'error'); return; }
+
+        const radio = Models.createRadio({
+            uniqueId: id,
+            serialNumber: document.getElementById('ar-serial').value.trim(),
+            model: document.getElementById('ar-model').value.trim(),
+            inServiceDate: document.getElementById('ar-date').value || new Date().toISOString(),
+            notes: document.getElementById('ar-notes').value.trim()
+        });
+
+        await DB.put('radios', radio);
+        await DB.put('auditLog', Models.createAuditEntry({
+            entityId: id, entityType: 'radio', action: 'created',
+            details: `Radio added: ${radio.model || 'N/A'}`, performedBy: UI.getClerkName()
+        }));
+
+        UI.closeModal();
+        UI.toast('Radio added — printing label...', 'success');
+        _printSingleLabel(id, `Radio: ${id}`, document.getElementById('ar-print-type').value);
+    });
+
+    // Show save & print when ID has a value
+    document.getElementById('ar-id').addEventListener('input', () => {
+        document.getElementById('ar-save-print-btn').style.display =
+            document.getElementById('ar-id').value.trim() ? 'inline-flex' : 'none';
     });
 }
 
