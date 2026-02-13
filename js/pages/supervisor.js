@@ -258,6 +258,25 @@ UI.registerPage('supervisor', async (container) => {
             <button class="btn btn-sm btn-outline" id="sv-prefix-reset" style="font-size:0.75rem;">↩ Reset to Defaults</button>
         </div>
 
+        <!-- File Integrity -->
+        <div class="card no-print">
+            <div class="card-header"><h3>🛡️ File Integrity</h3></div>
+            <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.75rem;">
+                Verifies that no code files have been modified by a virus or unauthorized person.
+                The manifest stores a SHA-256 hash of every file. If anything changes, a warning appears on startup.
+            </p>
+            <div id="sv-integrity-status" style="font-size:0.85rem;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:var(--surface-alt);border-radius:var(--radius);border:1px solid var(--border);">
+                Checking...
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button class="btn btn-primary" id="sv-regen-manifest">🔄 Regenerate Manifest</button>
+                <button class="btn btn-outline" id="sv-verify-files">🛡️ Verify Now</button>
+            </div>
+            <p style="font-size:0.7rem;color:var(--text-muted);margin-top:0.5rem;">
+                After updating code files, click "Regenerate Manifest" to accept the new versions as trusted.
+            </p>
+        </div>
+
         <!-- Password & Security -->
         <div class="card no-print">
             <div class="card-header"><h3>🔒 Dashboard Password</h3></div>
@@ -647,6 +666,56 @@ UI.registerPage('supervisor', async (container) => {
         await AssetPrefixes.resetToDefaults();
         UI.toast('Prefixes reset to defaults', 'success');
         UI.navigateTo('supervisor');
+    });
+
+    // ===== File Integrity =====
+    async function refreshIntegrityStatus() {
+        const el = document.getElementById('sv-integrity-status');
+        const result = await FileIntegrity.verify();
+        if (result.noManifest) {
+            el.innerHTML = '⚪ No manifest stored yet. Click "Regenerate Manifest" to create one.';
+        } else if (result.ok) {
+            el.innerHTML = `🟢 <strong>All ${result.storedFileCount} files verified</strong> — no modifications detected.<br><span style="font-size:0.75rem;color:var(--text-muted);">Manifest generated: ${new Date(result.storedTimestamp).toLocaleString()}</span>`;
+        } else {
+            let msg = `🔴 <strong>INTEGRITY FAILURE</strong>`;
+            if (result.mismatched.length > 0) msg += `<br>Modified: <code>${result.mismatched.join('</code>, <code>')}</code>`;
+            if (result.missing.length > 0) msg += `<br>Missing: <code>${result.missing.join('</code>, <code>')}</code>`;
+            msg += `<br><span style="font-size:0.75rem;color:var(--text-muted);">Manifest generated: ${new Date(result.storedTimestamp).toLocaleString()}</span>`;
+            el.innerHTML = msg;
+        }
+    }
+    refreshIntegrityStatus();
+
+    document.getElementById('sv-regen-manifest').addEventListener('click', async () => {
+        const btn = document.getElementById('sv-regen-manifest');
+        btn.disabled = true;
+        btn.textContent = '⏳ Hashing files...';
+        const manifest = await FileIntegrity.computeManifest();
+        await FileIntegrity.saveManifest(manifest);
+        btn.disabled = false;
+        btn.textContent = '🔄 Regenerate Manifest';
+        UI.toast(`Manifest saved: ${manifest.fileCount} files hashed`, 'success');
+        // Remove warning banner if present
+        const banner = document.getElementById('integrity-warning');
+        if (banner) banner.remove();
+        refreshIntegrityStatus();
+    });
+
+    document.getElementById('sv-verify-files').addEventListener('click', async () => {
+        const btn = document.getElementById('sv-verify-files');
+        btn.disabled = true;
+        btn.textContent = '⏳ Verifying...';
+        await refreshIntegrityStatus();
+        btn.disabled = false;
+        btn.textContent = '🛡️ Verify Now';
+        const result = await FileIntegrity.verify();
+        if (result.ok) {
+            UI.toast('All files verified — no tampering detected ✅', 'success');
+        } else if (result.noManifest) {
+            UI.toast('No manifest — generate one first', 'warning');
+        } else {
+            UI.toast(`WARNING: ${result.mismatched.length} modified, ${result.missing.length} missing`, 'error');
+        }
     });
 
     // ===== Password change/set/remove =====
