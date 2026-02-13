@@ -89,10 +89,28 @@ UI.registerPage('supervisor', async (container) => {
 
         <!-- Network Sync -->
         <div id="sv-sync" class="card no-print">
-            <div class="card-header"><h3>🔄 Database Sync</h3></div>
-            <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.75rem;">
-                Saves the database locally and pushes a copy to a shared network folder so other computers can access the same data.
+            <div class="card-header"><h3>🔄 Database Sync & Backup</h3></div>
+            <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.75rem;">
+                Dual local backups (A/B alternation) for crash safety, plus optional push to a shared network folder.
+                Retries automatically on failure. Integrity checked every 8 hours.
             </p>
+
+            <!-- Status indicators -->
+            <div id="sv-sync-indicators" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+                <div id="sv-ind-local" style="display:flex;align-items:center;gap:0.3rem;padding:0.3rem 0.6rem;border-radius:4px;font-size:0.75rem;font-weight:600;background:var(--surface-alt);border:1px solid var(--border);">
+                    <span id="sv-ind-local-dot" style="width:8px;height:8px;border-radius:50%;background:var(--gray-400);"></span>
+                    <span id="sv-ind-local-text">Local: checking...</span>
+                </div>
+                <div id="sv-ind-network" style="display:flex;align-items:center;gap:0.3rem;padding:0.3rem 0.6rem;border-radius:4px;font-size:0.75rem;font-weight:600;background:var(--surface-alt);border:1px solid var(--border);">
+                    <span id="sv-ind-net-dot" style="width:8px;height:8px;border-radius:50%;background:var(--gray-400);"></span>
+                    <span id="sv-ind-net-text">Network: —</span>
+                </div>
+                <div id="sv-ind-integrity" style="display:flex;align-items:center;gap:0.3rem;padding:0.3rem 0.6rem;border-radius:4px;font-size:0.75rem;font-weight:600;background:var(--surface-alt);border:1px solid var(--border);">
+                    <span id="sv-ind-int-dot" style="width:8px;height:8px;border-radius:50%;background:var(--gray-400);"></span>
+                    <span id="sv-ind-int-text">Integrity: —</span>
+                </div>
+            </div>
+
             <div class="form-row">
                 <div class="form-group">
                     <label>
@@ -108,24 +126,32 @@ UI.registerPage('supervisor', async (container) => {
                         <input type="text" id="sv-sync-path" value="${syncSettings.networkPath || ''}" placeholder="\\\\server\\share\\radio_backup" autocomplete="off" style="flex:1;">
                         <button class="btn btn-outline" id="sv-sync-browse" title="Browse for folder">📂 Browse</button>
                     </div>
-                    <small style="color:var(--text-muted);">UNC path to a shared folder all computers can access, or click Browse to pick one</small>
+                    <small style="color:var(--text-muted);">UNC path to a shared folder all computers can access</small>
                 </div>
                 <div class="form-group">
                     <label for="sv-sync-interval">Push Interval</label>
                     <select id="sv-sync-interval">
-                        <option value="5" ${syncSettings.intervalMinutes === 5 ? 'selected' : ''}>Every 5 minutes</option>
-                        <option value="10" ${syncSettings.intervalMinutes === 10 ? 'selected' : ''}>Every 10 minutes</option>
-                        <option value="15" ${syncSettings.intervalMinutes === 15 ? 'selected' : ''}>Every 15 minutes</option>
-                        <option value="30" ${syncSettings.intervalMinutes === 30 ? 'selected' : ''}>Every 30 minutes</option>
-                        <option value="60" ${syncSettings.intervalMinutes === 60 ? 'selected' : ''}>Every 60 minutes</option>
+                        <option value="1" ${syncSettings.intervalHours === 1 ? 'selected' : ''}>Every 1 hour</option>
+                        <option value="4" ${syncSettings.intervalHours === 4 ? 'selected' : ''}>Every 4 hours</option>
+                        <option value="8" ${syncSettings.intervalHours === 8 || !syncSettings.intervalHours ? 'selected' : ''}>Every 8 hours</option>
+                        <option value="16" ${syncSettings.intervalHours === 16 ? 'selected' : ''}>Every 16 hours</option>
                     </select>
                 </div>
             </div>
             <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
-                <button class="btn btn-primary" id="sv-sync-save">💾 Save Sync Settings</button>
+                <button class="btn btn-primary" id="sv-sync-save">💾 Save Settings</button>
                 <button class="btn btn-outline" id="sv-sync-push">⬆️ Push Now</button>
                 <button class="btn btn-outline" id="sv-sync-pull">⬇️ Pull from Network</button>
-                <button class="btn btn-outline" id="sv-sync-status">ℹ️ Check Status</button>
+                <button class="btn btn-outline" id="sv-sync-integrity">🩺 Check Integrity</button>
+            </div>
+
+            <!-- Local backup files info -->
+            <div id="sv-sync-files" style="font-size:0.75rem;background:var(--surface-alt);padding:0.5rem 0.75rem;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:0.5rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
+                    <strong>Local Backup Files</strong>
+                    <button class="btn btn-outline" id="sv-sync-open-folder" style="font-size:0.7rem;padding:0.15rem 0.5rem;">📁 Open Folder</button>
+                </div>
+                <div id="sv-sync-file-list" style="color:var(--text-muted);">Loading...</div>
             </div>
             <div id="sv-sync-info" style="font-size:0.8rem;color:var(--text-muted);"></div>
         </div>
@@ -258,7 +284,93 @@ UI.registerPage('supervisor', async (container) => {
     });
 
     // ===== Network Sync controls =====
-    // Browse button — opens native Windows folder picker via server API
+
+    // Helper: update status indicator dots and file list
+    async function refreshSyncIndicators() {
+        const settings = await NetworkSync.getSettings();
+
+        // Local indicator — based on last push
+        const localDot = document.getElementById('sv-ind-local-dot');
+        const localText = document.getElementById('sv-ind-local-text');
+        if (settings.lastPush && settings.lastPushStatus === 'success') {
+            localDot.style.background = 'var(--success)';
+            localText.textContent = 'Local: saved ' + new Date(settings.lastPush).toLocaleTimeString();
+        } else if (settings.lastPushStatus && settings.lastPushStatus.startsWith('error')) {
+            localDot.style.background = 'var(--danger)';
+            localText.textContent = 'Local: error';
+        } else {
+            localDot.style.background = 'var(--gray-400)';
+            localText.textContent = 'Local: no saves yet';
+        }
+
+        // Network indicator
+        const netDot = document.getElementById('sv-ind-net-dot');
+        const netText = document.getElementById('sv-ind-net-text');
+        if (settings.lastNetworkOk === true) {
+            netDot.style.background = 'var(--success)';
+            netText.textContent = 'Network: saved';
+        } else if (settings.lastNetworkOk === false && settings.lastPush) {
+            netDot.style.background = 'var(--danger)';
+            netText.textContent = settings.retryCount > 0 ? `Network: retrying (${settings.retryCount}/${NetworkSync.MAX_RETRIES})` : 'Network: failed';
+        } else {
+            netDot.style.background = 'var(--gray-400)';
+            netText.textContent = settings.enabled ? 'Network: —' : 'Network: disabled';
+        }
+
+        // Integrity indicator
+        const intDot = document.getElementById('sv-ind-int-dot');
+        const intText = document.getElementById('sv-ind-int-text');
+        if (settings.integrityOk === true) {
+            intDot.style.background = 'var(--success)';
+            intText.textContent = 'Integrity: clean';
+        } else if (settings.integrityOk === false) {
+            intDot.style.background = 'var(--danger)';
+            intText.textContent = 'Integrity: WARNING';
+        } else {
+            intDot.style.background = 'var(--gray-400)';
+            intText.textContent = 'Integrity: not checked';
+        }
+
+        // File list — try to load from server
+        try {
+            const status = await NetworkSync.getStatus();
+            if (status.error) throw new Error(status.error);
+            const fileListEl = document.getElementById('sv-sync-file-list');
+            const fmtSlot = (s) => {
+                if (!s.exists) return `<span style="color:var(--text-muted);">Not created yet</span>`;
+                const kb = (s.size / 1024).toFixed(1);
+                const time = new Date(s.modified).toLocaleString();
+                const icon = s.ok ? '<span style="color:var(--success);">●</span>' : '<span style="color:var(--danger);">●</span>';
+                const label = s.ok ? 'valid' : '<span style="color:var(--danger);">CORRUPT</span>';
+                return `${icon} ${kb} KB — ${time} — ${label}`;
+            };
+            fileListEl.innerHTML = `
+                <div>Slot A: ${status.slotA ? fmtSlot(status.slotA) : '—'}</div>
+                <div>Slot B: ${status.slotB ? fmtSlot(status.slotB) : '—'}</div>
+                <div style="margin-top:0.2rem;color:var(--text-muted);">Next write → Slot ${status.nextSlot || '?'}</div>
+                ${status.network && status.network.exists ? `<div style="margin-top:0.2rem;">Network: ${fmtSlot(status.network)}</div>` : ''}
+            `;
+
+            // Update indicators from live file check
+            const aOk = status.slotA && status.slotA.ok;
+            const bOk = status.slotB && status.slotB.ok;
+            if (aOk || bOk) {
+                localDot.style.background = 'var(--success)';
+                if (settings.lastPush) localText.textContent = 'Local: saved ' + new Date(settings.lastPush).toLocaleTimeString();
+            }
+            if (status.network && status.network.ok) {
+                netDot.style.background = 'var(--success)';
+                netText.textContent = 'Network: saved';
+            }
+        } catch (e) {
+            document.getElementById('sv-sync-file-list').innerHTML = `<span style="color:var(--text-muted);">Server not running — start with start.bat to see file status</span>`;
+        }
+    }
+
+    // Load indicators on page load
+    refreshSyncIndicators();
+
+    // Browse button
     document.getElementById('sv-sync-browse').addEventListener('click', async () => {
         const btn = document.getElementById('sv-sync-browse');
         btn.disabled = true;
@@ -274,17 +386,27 @@ UI.registerPage('supervisor', async (container) => {
                 UI.toast('No folder selected', 'info');
             }
         } catch (e) {
-            UI.toast('Could not open folder picker: ' + e.message + '. Is the server running via start.bat?', 'error');
+            UI.toast('Could not open folder picker: ' + e.message, 'error');
         } finally {
             btn.disabled = false;
             btn.textContent = '📂 Browse';
         }
     });
 
+    // Open local backup folder in Explorer
+    document.getElementById('sv-sync-open-folder').addEventListener('click', async () => {
+        try {
+            await NetworkSync.openLocalFolder();
+        } catch (e) {
+            UI.toast('Could not open folder', 'error');
+        }
+    });
+
+    // Save settings
     document.getElementById('sv-sync-save').addEventListener('click', async () => {
         const enabled = document.getElementById('sv-sync-enabled').checked;
         const networkPath = document.getElementById('sv-sync-path').value.trim();
-        const intervalMinutes = parseInt(document.getElementById('sv-sync-interval').value);
+        const intervalHours = parseInt(document.getElementById('sv-sync-interval').value);
 
         if (enabled && !networkPath) {
             UI.toast('Enter a network folder path', 'error');
@@ -294,26 +416,34 @@ UI.registerPage('supervisor', async (container) => {
         const settings = await NetworkSync.getSettings();
         settings.enabled = enabled;
         settings.networkPath = networkPath;
-        settings.intervalMinutes = intervalMinutes;
+        settings.intervalHours = intervalHours;
         await NetworkSync.saveSettings(settings);
         NetworkSync.restart();
-        UI.toast('Sync settings saved' + (enabled ? ` — pushing every ${intervalMinutes} min` : ' — sync disabled'), 'success');
+        UI.toast('Sync settings saved' + (enabled ? ` — pushing every ${intervalHours}h` : ' — sync disabled'), 'success');
     });
 
+    // Push Now
     document.getElementById('sv-sync-push').addEventListener('click', async () => {
-        UI.toast('Pushing database to network...', 'info');
+        const btn = document.getElementById('sv-sync-push');
+        btn.disabled = true;
+        btn.textContent = '⏳ Pushing...';
+        UI.toast('Pushing database...', 'info');
         const result = await NetworkSync.pushToNetwork();
         if (result.ok) {
             const info = [];
-            if (result.result.localOk) info.push('Local ✓');
+            info.push('Local slot ' + (result.result.localSlot || '?') + ' ✓');
             if (result.result.networkOk) info.push('Network ✓');
-            else if (result.result.networkError) info.push('Network ✗: ' + result.result.networkError);
-            UI.toast('Sync complete: ' + info.join(', '), result.result.networkOk ? 'success' : 'warning');
+            else if (result.result.networkError) info.push('Network ✗ — will retry');
+            UI.toast('Saved: ' + info.join(', '), result.result.networkOk ? 'success' : 'warning');
         } else {
-            UI.toast('Sync failed: ' + result.error, 'error');
+            UI.toast('Push failed: ' + result.error, 'error');
         }
+        btn.disabled = false;
+        btn.textContent = '⬆️ Push Now';
+        refreshSyncIndicators();
     });
 
+    // Pull from Network
     document.getElementById('sv-sync-pull').addEventListener('click', async () => {
         UI.toast('Pulling database from network...', 'info');
         const payload = await NetworkSync.pullFromNetwork();
@@ -326,27 +456,23 @@ UI.registerPage('supervisor', async (container) => {
         }
     });
 
-    document.getElementById('sv-sync-status').addEventListener('click', async () => {
-        try {
-            const resp = await fetch('/api/sync/status');
-            if (!resp.ok) throw new Error('Server returned ' + resp.status);
-            const status = await resp.json();
-            const infoEl = document.getElementById('sv-sync-info');
-            infoEl.innerHTML = `
-                <div style="background:var(--surface-alt);padding:0.5rem 0.75rem;border-radius:var(--radius);border:1px solid var(--border);margin-top:0.5rem;">
-                    <strong>Local Backup:</strong> ${status.localExists ? '✅ ' + (status.localSize / 1024).toFixed(1) + ' KB — ' + new Date(status.localModified).toLocaleString() : '❌ Not found'}<br>
-                    <strong>Network Backup:</strong> ${status.networkExists ? '✅ ' + (status.networkSize / 1024).toFixed(1) + ' KB — ' + new Date(status.networkModified).toLocaleString() : status.networkPath ? '❌ Not found at ' + status.networkPath : '⚠️ No network path configured'}
-                </div>
-            `;
-        } catch (e) {
-            document.getElementById('sv-sync-info').innerHTML = `<span style="color:var(--danger);">Could not check status: ${e.message}. Is the server running via start.bat?</span>`;
+    // Check Integrity
+    document.getElementById('sv-sync-integrity').addEventListener('click', async () => {
+        const btn = document.getElementById('sv-sync-integrity');
+        btn.disabled = true;
+        btn.textContent = '⏳ Checking...';
+        const result = await NetworkSync.checkIntegrity();
+        if (result.ok) {
+            UI.toast('Integrity check passed — local backups are clean', 'success');
+        } else if (result.error) {
+            UI.toast('Integrity check failed: ' + result.error, 'error');
+        } else {
+            UI.toast('WARNING: Both local backup files may be corrupt!', 'error');
         }
+        btn.disabled = false;
+        btn.textContent = '🩺 Check Integrity';
+        refreshSyncIndicators();
     });
-
-    // Show last sync info if available
-    if (syncSettings.lastPush) {
-        document.getElementById('sv-sync-info').innerHTML = `Last push: ${new Date(syncSettings.lastPush).toLocaleString()} — ${syncSettings.lastPushStatus || ''}`;
-    }
 
     // Overdue radios
     if (radioStats.overdueList.length > 0) {

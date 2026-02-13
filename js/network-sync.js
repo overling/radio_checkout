@@ -1,25 +1,42 @@
 /**
  * Network Sync Module
- * Periodically pushes the IndexedDB database as JSON to a network folder via the local server.
- * On startup, attempts to load from network first; falls back to local IndexedDB.
+ * Periodically pushes the IndexedDB database as JSON to local dual backups (A/B) + network folder.
+ * On startup, attempts to load from network first; falls back to newest valid local backup.
  *
  * Architecture:
- *   Browser  →  POST /api/sync  →  PowerShell server  →  writes JSON to network path
- *   Browser  ←  GET  /api/sync  ←  PowerShell server  ←  reads JSON from network path
+ *   Browser  →  POST /api/sync  →  PowerShell server  →  writes to local A/B + network
+ *   Browser  ←  GET  /api/sync  ←  PowerShell server  ←  reads from network → fallback local
+ *
+ * Features:
+ *   - Dual local backups (A/B alternation) for crash safety
+ *   - Retry on failure: up to 3 retries at 2-minute intervals
+ *   - Integrity check: validates local files periodically (every 8 hours)
+ *   - Status tracking: last push time, success/fail, file health
  *
  * Settings stored in IndexedDB under 'networkSync':
- *   { enabled, networkPath, intervalMinutes, lastPush, lastPushStatus }
+ *   { enabled, networkPath, intervalHours, lastPush, lastPushStatus,
+ *     lastIntegrityCheck, retryCount }
  */
 const NetworkSync = (() => {
     let syncTimer = null;
+    let retryTimer = null;
+    let integrityTimer = null;
 
     const DEFAULTS = {
         enabled: false,
-        networkPath: '',          // e.g. \\\\server\\share\\radio_backup
-        intervalMinutes: 15,      // push interval
+        networkPath: '',
+        intervalHours: 8,         // push interval in hours: 1, 4, 8, 16
         lastPush: null,
-        lastPushStatus: null
+        lastPushStatus: null,     // 'success' | 'error: ...'
+        lastNetworkOk: null,      // true/false — did network write succeed last time?
+        lastIntegrityCheck: null,
+        integrityOk: null,        // true/false/null — are local files clean?
+        retryCount: 0
     };
+
+    const MAX_RETRIES = 3;
+    const RETRY_INTERVAL_MS = 2 * 60 * 1000;      // 2 minutes
+    const INTEGRITY_INTERVAL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
     async function getSettings() {
         const saved = await DB.getSetting('networkSync', null);
@@ -31,7 +48,7 @@ const NetworkSync = (() => {
         await DB.setSetting('networkSync', settings);
     }
 
-    // Push local DB to network via server API
+    // Push local DB to server (dual local A/B + network)
     async function pushToNetwork() {
         const settings = await getSettings();
         if (!settings.enabled || !settings.networkPath) return { ok: false, error: 'Sync not configured' };
@@ -58,15 +75,53 @@ const NetworkSync = (() => {
             const result = await resp.json();
             settings.lastPush = new Date().toISOString();
             settings.lastPushStatus = 'success';
+            settings.lastNetworkOk = result.networkOk;
+            settings.retryCount = 0;
             await saveSettings(settings);
-            console.log('Network sync push successful:', result.localPath, result.networkPath);
+            cancelRetry();
+            console.log(`Sync push OK → local slot ${result.localSlot}, network=${result.networkOk}`);
+
+            // If local succeeded but network failed, schedule retry
+            if (!result.networkOk && result.networkError) {
+                console.warn('Network write failed, scheduling retry:', result.networkError);
+                scheduleRetry();
+                return { ok: true, result, networkFailed: true };
+            }
+
             return { ok: true, result };
         } catch (e) {
             settings.lastPushStatus = 'error: ' + e.message;
+            settings.lastNetworkOk = false;
+            settings.retryCount = (settings.retryCount || 0) + 1;
             await saveSettings(settings);
-            console.error('Network sync push failed:', e);
+            console.error('Sync push failed:', e.message);
+
+            // Schedule retry if under limit
+            if (settings.retryCount < MAX_RETRIES) {
+                scheduleRetry();
+            }
+
             return { ok: false, error: e.message };
         }
+    }
+
+    // Retry logic
+    function scheduleRetry() {
+        cancelRetry();
+        retryTimer = setTimeout(async () => {
+            const settings = await getSettings();
+            if (settings.retryCount >= MAX_RETRIES) {
+                console.warn(`Sync retry limit reached (${MAX_RETRIES}). Giving up until next scheduled push.`);
+                return;
+            }
+            console.log(`Sync retry attempt ${settings.retryCount + 1}/${MAX_RETRIES}...`);
+            await pushToNetwork();
+        }, RETRY_INTERVAL_MS);
+        console.log(`Retry scheduled in ${RETRY_INTERVAL_MS / 60000} minutes`);
+    }
+
+    function cancelRetry() {
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     }
 
     // Pull from network — returns the parsed data or null
@@ -85,12 +140,60 @@ const NetworkSync = (() => {
             if (!payload || !payload.data) throw new Error('Invalid backup format');
             return payload;
         } catch (e) {
-            console.warn('Network sync pull failed:', e.message);
+            console.warn('Sync pull failed:', e.message);
             return null;
         }
     }
 
-    // On startup: try network first, fall back to local
+    // Check integrity of local backup files via server
+    async function checkIntegrity() {
+        try {
+            const resp = await fetch('/api/sync/status');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const status = await resp.json();
+
+            const aOk = status.slotA && status.slotA.ok;
+            const bOk = status.slotB && status.slotB.ok;
+            const allOk = aOk || bOk; // At least one valid backup
+
+            const settings = await getSettings();
+            settings.lastIntegrityCheck = new Date().toISOString();
+            settings.integrityOk = allOk;
+            await saveSettings(settings);
+
+            console.log(`Integrity check: A=${aOk ? 'OK' : 'BAD'}, B=${bOk ? 'OK' : 'BAD'} → ${allOk ? 'CLEAN' : 'WARNING'}`);
+            return { ok: allOk, slotA: status.slotA, slotB: status.slotB, network: status.network };
+        } catch (e) {
+            console.error('Integrity check failed:', e.message);
+            return { ok: false, error: e.message };
+        }
+    }
+
+    // Get full status (for UI display)
+    async function getStatus() {
+        try {
+            const resp = await fetch('/api/sync/status');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return await resp.json();
+        } catch (e) {
+            return { error: e.message };
+        }
+    }
+
+    // Open the local data folder in Windows Explorer
+    async function openLocalFolder() {
+        try {
+            const status = await getStatus();
+            const dir = status.dataDir;
+            if (dir) {
+                await fetch('/api/open-folder?path=' + encodeURIComponent(dir));
+            }
+        } catch (e) {
+            console.error('Could not open folder:', e.message);
+        }
+    }
+
+    // On startup: try network first, fall back to newest valid local
     async function loadOnStartup() {
         const settings = await getSettings();
         if (!settings.enabled || !settings.networkPath) {
@@ -105,7 +208,6 @@ const NetworkSync = (() => {
                 return { source: 'local', reason: 'network unavailable' };
             }
 
-            // Check if network is newer than local
             const localTimestamp = await DB.getSetting('lastModified', null);
             const networkTimestamp = networkData.timestamp;
 
@@ -114,7 +216,6 @@ const NetworkSync = (() => {
                 return { source: 'local', reason: 'local is newer' };
             }
 
-            // Network is newer — import it
             await DB.importAll(networkData.data);
             console.log('Loaded database from network backup (timestamp: ' + networkTimestamp + ')');
             return { source: 'network', timestamp: networkTimestamp };
@@ -124,33 +225,35 @@ const NetworkSync = (() => {
         }
     }
 
-    // Start periodic sync timer
+    // Start periodic sync + integrity check timers
     function start() {
         stop();
         getSettings().then(settings => {
             if (!settings.enabled || !settings.networkPath) return;
 
-            const ms = (settings.intervalMinutes || 15) * 60 * 1000;
+            const hours = settings.intervalHours || 8;
+            const ms = hours * 60 * 60 * 1000;
             syncTimer = setInterval(async () => {
-                const result = await pushToNetwork();
-                if (result.ok && typeof UI !== 'undefined' && UI.toast) {
-                    // Silent success — only log, don't toast every sync
-                    console.log('Periodic network sync completed');
-                }
+                console.log('Periodic sync push...');
+                await pushToNetwork();
             }, ms);
 
-            console.log(`Network sync started: every ${settings.intervalMinutes} minutes → ${settings.networkPath}`);
+            // Integrity check every 8 hours
+            integrityTimer = setInterval(async () => {
+                console.log('Periodic integrity check...');
+                await checkIntegrity();
+            }, INTEGRITY_INTERVAL_MS);
+
+            console.log(`Network sync started: every ${hours}h → ${settings.networkPath}`);
         });
     }
 
     function stop() {
-        if (syncTimer) {
-            clearInterval(syncTimer);
-            syncTimer = null;
-        }
+        if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
+        if (integrityTimer) { clearInterval(integrityTimer); integrityTimer = null; }
+        cancelRetry();
     }
 
-    // Restart timer (call after settings change)
     function restart() {
         stop();
         start();
@@ -162,9 +265,13 @@ const NetworkSync = (() => {
         pushToNetwork,
         pullFromNetwork,
         loadOnStartup,
+        checkIntegrity,
+        getStatus,
+        openLocalFolder,
         start,
         stop,
         restart,
-        DEFAULTS
+        DEFAULTS,
+        MAX_RETRIES
     };
 })();

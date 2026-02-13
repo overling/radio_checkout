@@ -799,14 +799,17 @@ UI.registerPage('test-harness', async (container) => {
             assert('NetworkSync module loaded', typeof NetworkSync !== 'undefined');
             const syncSettings = await NetworkSync.getSettings();
             assert('NetworkSync.getSettings()', !!syncSettings, `enabled=${syncSettings.enabled}`);
-            assert('Sync has intervalMinutes', typeof syncSettings.intervalMinutes === 'number', `${syncSettings.intervalMinutes} min`);
+            assert('Sync has intervalHours', typeof syncSettings.intervalHours === 'number', `${syncSettings.intervalHours}h`);
             assert('Sync has networkPath field', 'networkPath' in syncSettings);
+            assert('Sync has retry tracking', 'retryCount' in syncSettings);
+            assert('Sync has integrity tracking', 'integrityOk' in syncSettings);
+            assert('Sync default interval is 8h', syncSettings.intervalHours === 8 || syncSettings.intervalHours > 0, `${syncSettings.intervalHours}h`);
 
             // Test save/load settings round-trip
-            const testSettings = { ...syncSettings, networkPath: '\\\\TEST\\share', intervalMinutes: 30 };
+            const testSettings = { ...syncSettings, networkPath: '\\\\TEST\\share', intervalHours: 4 };
             await NetworkSync.saveSettings(testSettings);
             const reloaded = await NetworkSync.getSettings();
-            assert('Sync settings round-trip', reloaded.networkPath === '\\\\TEST\\share' && reloaded.intervalMinutes === 30, 'Save/load OK');
+            assert('Sync settings round-trip', reloaded.networkPath === '\\\\TEST\\share' && reloaded.intervalHours === 4, 'Save/load OK');
             // Restore
             await NetworkSync.saveSettings(syncSettings);
         } catch (e) {

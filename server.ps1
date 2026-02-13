@@ -36,21 +36,80 @@ $mimeTypes = @{
     '.ttf'  = 'font/ttf'
 }
 
-# Local backup file (always saved alongside server)
-$localBackupFile = Join-Path $root "data\db-backup.json"
-
-# Ensure data directory exists
+# Dual local backup files (A/B alternation for redundancy)
 $dataDir = Join-Path $root "data"
 if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Path $dataDir -Force | Out-Null }
+$localBackupA = Join-Path $dataDir "db-backup-A.json"
+$localBackupB = Join-Path $dataDir "db-backup-B.json"
 
-# Helper: read network path from the JSON config stored in the local backup
-function Get-NetworkPath {
-    try {
-        if (Test-Path $localBackupFile) {
-            $json = Get-Content $localBackupFile -Raw | ConvertFrom-Json
-            if ($json.networkPath) { return $json.networkPath }
+# Determine which slot to write next (alternates A→B→A→B)
+function Get-NextSlot {
+    $aExists = Test-Path $localBackupA
+    $bExists = Test-Path $localBackupB
+    if (-not $aExists) { return "A" }
+    if (-not $bExists) { return "B" }
+    # Both exist — write to the OLDER one
+    $aTime = (Get-Item $localBackupA).LastWriteTimeUtc
+    $bTime = (Get-Item $localBackupB).LastWriteTimeUtc
+    if ($aTime -le $bTime) { return "A" } else { return "B" }
+}
+
+function Get-SlotPath($slot) {
+    if ($slot -eq "A") { return $localBackupA } else { return $localBackupB }
+}
+
+# Get the newest valid local backup
+function Get-NewestValidBackup {
+    $best = $null
+    $bestTime = [DateTime]::MinValue
+    $bestSlot = ""
+    foreach ($slot in @("A","B")) {
+        $p = Get-SlotPath $slot
+        if (Test-Path $p) {
+            try {
+                $raw = [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8)
+                $null = $raw | ConvertFrom-Json  # validate JSON
+                $t = (Get-Item $p).LastWriteTimeUtc
+                if ($t -gt $bestTime) { $bestTime = $t; $best = $raw; $bestSlot = $slot }
+            } catch {
+                Write-Host "  [BACKUP] Slot $slot is corrupt or unreadable: $_" -ForegroundColor Red
+            }
         }
-    } catch {}
+    }
+    return @{ content = $best; slot = $bestSlot; time = $bestTime }
+}
+
+# Validate a JSON backup file — returns hashtable with ok, size, modified, error
+function Test-BackupFile($filePath) {
+    if (-not (Test-Path $filePath)) { return @{ ok = $false; exists = $false; error = "File not found" } }
+    try {
+        $raw = [System.IO.File]::ReadAllText($filePath, [System.Text.Encoding]::UTF8)
+        $parsed = $raw | ConvertFrom-Json
+        $hasData = ($null -ne $parsed.data)
+        $item = Get-Item $filePath
+        return @{
+            ok = $hasData
+            exists = $true
+            size = $item.Length
+            modified = $item.LastWriteTime.ToString("o")
+            error = if ($hasData) { "" } else { "Missing 'data' field" }
+        }
+    } catch {
+        return @{ ok = $false; exists = $true; error = $_.Exception.Message }
+    }
+}
+
+# Helper: read network path from either local backup
+function Get-NetworkPath {
+    foreach ($slot in @("A","B")) {
+        try {
+            $p = Get-SlotPath $slot
+            if (Test-Path $p) {
+                $json = Get-Content $p -Raw | ConvertFrom-Json
+                if ($json.networkPath) { return $json.networkPath }
+            }
+        } catch {}
+    }
     return $null
 }
 
@@ -112,13 +171,12 @@ try {
                 $obj = @{ ok = $true; path = $selectedPath }
                 Send-JsonResponse $resp 200 $obj
             }
-            # ===== API: POST /api/sync — save DB to local + network =====
+            # ===== API: POST /api/sync — save DB to local (dual A/B) + network =====
             elseif ($path -eq '/api/sync' -and $req.HttpMethod -eq 'POST') {
                 $reader = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
                 $body = $reader.ReadToEnd()
                 $reader.Close()
 
-                # Parse to extract networkPath if present
                 try {
                     $parsed = $body | ConvertFrom-Json
                 } catch {
@@ -126,10 +184,12 @@ try {
                     continue
                 }
 
-                # Always save locally
-                [System.IO.File]::WriteAllText($localBackupFile, $body, [System.Text.Encoding]::UTF8)
+                # Save to the next local slot (A/B alternation)
+                $slot = Get-NextSlot
+                $slotPath = Get-SlotPath $slot
+                [System.IO.File]::WriteAllText($slotPath, $body, [System.Text.Encoding]::UTF8)
                 $localOk = $true
-                Write-Host "  [SYNC] Local backup saved: $localBackupFile" -ForegroundColor Green
+                Write-Host "  [SYNC] Local backup slot $slot saved: $slotPath" -ForegroundColor Green
 
                 # Try to save to network path if provided
                 $networkOk = $false
@@ -138,7 +198,6 @@ try {
                 if ($parsed.networkPath -and $parsed.networkPath -ne '') {
                     $networkDest = Join-Path $parsed.networkPath "db-backup.json"
                     try {
-                        # Ensure network directory exists
                         if (-not (Test-Path $parsed.networkPath)) {
                             New-Item -ItemType Directory -Path $parsed.networkPath -Force | Out-Null
                         }
@@ -153,7 +212,8 @@ try {
 
                 $result = @{
                     ok = $true
-                    localPath = $localBackupFile
+                    localSlot = $slot
+                    localPath = $slotPath
                     localOk = $localOk
                     networkPath = $networkDest
                     networkOk = $networkOk
@@ -162,7 +222,7 @@ try {
                 }
                 Send-JsonResponse $resp 200 $result
             }
-            # ===== API: GET /api/sync — load DB from network (fallback: local) =====
+            # ===== API: GET /api/sync — load DB from network (fallback: newest valid local) =====
             elseif ($path -eq '/api/sync' -and $req.HttpMethod -eq 'GET') {
                 $source = ""
                 $content = $null
@@ -174,22 +234,23 @@ try {
                     if (Test-Path $networkFile) {
                         try {
                             $content = [System.IO.File]::ReadAllText($networkFile, [System.Text.Encoding]::UTF8)
+                            $null = $content | ConvertFrom-Json  # validate
                             $source = "network"
                             Write-Host "  [SYNC] Loaded from network: $networkFile" -ForegroundColor Cyan
                         } catch {
-                            Write-Host "  [SYNC] Network read failed: $_" -ForegroundColor Red
+                            Write-Host "  [SYNC] Network read/parse failed: $_" -ForegroundColor Red
+                            $content = $null
                         }
                     }
                 }
 
-                # Fallback to local
-                if (-not $content -and (Test-Path $localBackupFile)) {
-                    try {
-                        $content = [System.IO.File]::ReadAllText($localBackupFile, [System.Text.Encoding]::UTF8)
-                        $source = "local"
-                        Write-Host "  [SYNC] Loaded from local: $localBackupFile" -ForegroundColor Yellow
-                    } catch {
-                        Write-Host "  [SYNC] Local read failed: $_" -ForegroundColor Red
+                # Fallback to newest valid local backup (A or B)
+                if (-not $content) {
+                    $best = Get-NewestValidBackup
+                    if ($best.content) {
+                        $content = $best.content
+                        $source = "local-$($best.slot)"
+                        Write-Host "  [SYNC] Loaded from local slot $($best.slot)" -ForegroundColor Yellow
                     }
                 }
 
@@ -207,29 +268,44 @@ try {
                     Send-ErrorResponse $resp 404 "No backup found"
                 }
             }
-            # ===== API: GET /api/sync/status — check sync config and file status =====
+            # ===== API: GET /api/sync/status — check dual local backups + network file status =====
             elseif ($path -eq '/api/sync/status' -and $req.HttpMethod -eq 'GET') {
-                $localExists = Test-Path $localBackupFile
-                $localSize = if ($localExists) { (Get-Item $localBackupFile).Length } else { 0 }
-                $localModified = if ($localExists) { (Get-Item $localBackupFile).LastWriteTime.ToString("o") } else { $null }
+                $slotA = Test-BackupFile $localBackupA
+                $slotA["path"] = $localBackupA
+                $slotA["slot"] = "A"
+
+                $slotB = Test-BackupFile $localBackupB
+                $slotB["path"] = $localBackupB
+                $slotB["slot"] = "B"
 
                 $netPath = Get-NetworkPath
                 $networkFile = if ($netPath) { Join-Path $netPath "db-backup.json" } else { "" }
-                $networkExists = if ($networkFile -and $networkFile -ne "") { Test-Path $networkFile } else { $false }
-                $networkSize = if ($networkExists) { (Get-Item $networkFile).Length } else { 0 }
-                $networkModified = if ($networkExists) { (Get-Item $networkFile).LastWriteTime.ToString("o") } else { $null }
+                $netStatus = @{ ok = $false; exists = $false; path = $networkFile; error = "" }
+                if ($networkFile -and $networkFile -ne "") {
+                    $netStatus = Test-BackupFile $networkFile
+                    $netStatus["path"] = $networkFile
+                }
+
+                $nextSlot = Get-NextSlot
 
                 $status = @{
-                    localPath = $localBackupFile
-                    localExists = $localExists
-                    localSize = $localSize
-                    localModified = $localModified
-                    networkPath = $networkFile
-                    networkExists = $networkExists
-                    networkSize = $networkSize
-                    networkModified = $networkModified
+                    slotA = $slotA
+                    slotB = $slotB
+                    nextSlot = $nextSlot
+                    network = $netStatus
+                    dataDir = $dataDir
                 }
                 Send-JsonResponse $resp 200 $status
+            }
+            # ===== API: GET /api/open-folder?path=... — open folder in Windows Explorer =====
+            elseif ($path -eq '/api/open-folder' -and $req.HttpMethod -eq 'GET') {
+                $folderPath = $req.QueryString["path"]
+                if ($folderPath -and (Test-Path $folderPath)) {
+                    Start-Process explorer.exe -ArgumentList $folderPath
+                    Send-JsonResponse $resp 200 @{ ok = $true }
+                } else {
+                    Send-JsonResponse $resp 200 @{ ok = $false; error = "Path not found" }
+                }
             }
             # ===== Static file serving =====
             else {
