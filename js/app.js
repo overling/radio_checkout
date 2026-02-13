@@ -72,6 +72,23 @@ function applyTheme(theme) {
             }
         }
 
+        // Info button (?) — version/author popup
+        document.getElementById('header-info-btn').addEventListener('click', () => {
+            UI.showModal('About USPS Asset Tracker', `
+                <div style="text-align:center;line-height:2;">
+                    <div style="font-size:2.5rem;margin-bottom:0.25rem;">📻</div>
+                    <div style="font-size:1.3rem;font-weight:700;">USPS Asset Tracker</div>
+                    <div style="font-size:0.95rem;color:var(--text-secondary);margin-bottom:0.75rem;">Radio & Equipment Management System</div>
+                    <hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0;">
+                    <div style="font-size:1rem;"><strong>Version:</strong> 1.0</div>
+                    <div style="font-size:1rem;"><strong>Author:</strong> WB</div>
+                    <div style="font-size:1rem;"><strong>Date:</strong> 2.13.2026</div>
+                    <hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0;">
+                    <button class="btn btn-primary" onclick="UI.closeModal(); UI.navigateTo('help');" style="margin-top:0.25rem;">📖 Open Instruction Manual</button>
+                </div>
+            `);
+        });
+
         // Navigate to home
         UI.navigateTo('home');
 

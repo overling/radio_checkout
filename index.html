@@ -18,7 +18,7 @@
             <h1>📻 USPS Asset Tracker</h1>
         </div>
         <div class="header-right">
-            <span id="header-clock"></span>
+            <span id="header-clock" title="Current date and time"></span>
             <select id="theme-select" class="theme-select" title="Color theme">
                 <option value="light">☀️ Light</option>
                 <option value="dark">🌙 Dark</option>
@@ -29,20 +29,21 @@
                 <option value="usps-dark">📬 USPS Dark</option>
             </select>
             <span id="header-clerk" class="clerk-badge" title="Click to change clerk name"></span>
+            <button id="header-info-btn" title="About this app" style="background:none;border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:50%;width:26px;height:26px;font-size:0.8rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;margin-left:0.25rem;">?</button>
         </div>
     </header>
 
     <nav id="main-nav">
-        <button class="nav-btn active" data-page="home">🏠 Home</button>
-        <button class="nav-btn" data-page="clerk-station">🖥️ Clerk Station</button>
-        <button class="nav-btn" data-page="quick-scan">⚡ Quick Scan</button>
-        <button class="nav-btn" data-page="checkout">📤 Check Out</button>
-        <button class="nav-btn" data-page="return">📥 Return</button>
-        <button class="nav-btn" data-page="assets">📦 Assets</button>
-        <button class="nav-btn" data-page="battery-dashboard">🔋 Batteries</button>
-        <button class="nav-btn" data-page="supervisor">📊 Supervisor</button>
-        <button class="nav-btn" data-page="print-codes">🏷️ Print Codes</button>
-        <button class="nav-btn" data-page="export">💾 Export</button>
+        <button class="nav-btn active" data-page="home" title="Dashboard overview with fleet status, alerts, and recent activity">🏠 Home</button>
+        <button class="nav-btn" data-page="clerk-station" title="Two-scan checkout/return station for clerks — scan radio then badge">🖥️ Clerk Station</button>
+        <button class="nav-btn" data-page="quick-scan" title="Fast single-scan mode — auto-detects check-in or check-out">⚡ Quick Scan</button>
+        <button class="nav-btn" data-page="checkout" title="Manual radio checkout with dropdown selection">📤 Check Out</button>
+        <button class="nav-btn" data-page="return" title="Manual radio return with condition reporting">📥 Return</button>
+        <button class="nav-btn" data-page="assets" title="Add, edit, and manage radios, batteries, and tools">📦 Assets</button>
+        <button class="nav-btn" data-page="battery-dashboard" title="Battery inventory, health tracking, and retirement">🔋 Batteries</button>
+        <button class="nav-btn" data-page="supervisor" title="Password-protected admin panel — alerts, email, sync, and settings">📊 Supervisor</button>
+        <button class="nav-btn" data-page="print-codes" title="Generate and print QR codes or barcodes for any asset">🏷️ Print Codes</button>
+        <button class="nav-btn" data-page="export" title="Export data to Excel/JSON, import backups, or clear the database">💾 Export</button>
     </nav>
 
     <main id="app-content">
@@ -90,6 +91,7 @@
     <script src="js/pages/export.js"></script>
     <script src="js/pages/quick-scan.js"></script>
     <script src="js/pages/clerk-station.js"></script>
+    <script src="js/pages/help.js"></script>
     <script src="js/pages/test-harness.js"></script>
     <script src="js/auto-backup.js"></script>
     <script src="js/network-sync.js"></script>
