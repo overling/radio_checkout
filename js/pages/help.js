@@ -2,6 +2,7 @@
  * Help / Instruction Manual — simple, visual guide for all features.
  */
 UI.registerPage('help', async (container) => {
+    const _info = await _AP.getInfo();
     container.innerHTML = `
         <div style="max-width:900px;margin:0 auto;">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
@@ -10,11 +11,11 @@ UI.registerPage('help', async (container) => {
             </div>
 
             <div style="background:var(--primary-light);padding:1rem 1.25rem;border-radius:var(--radius);margin-bottom:1.5rem;font-size:0.95rem;">
-                <strong>Welcome to the USPS Asset Tracker!</strong><br>
+                <strong>Welcome to the ${_info.app}!</strong><br>
                 This app tracks radios, batteries, and tools. You can check equipment in and out,
                 print labels, get alerts for overdue items, and export reports — all from your browser.
                 <br><br>
-                <strong>Version:</strong> 1.0 &nbsp;|&nbsp; <strong>Author:</strong> WB &nbsp;|&nbsp; <strong>Date:</strong> 2.13.2026
+                <strong>Version:</strong> ${_info.version} &nbsp;|&nbsp; <strong>Author:</strong> ${_info.author} &nbsp;|&nbsp; <strong>Date:</strong> ${_info.date}
             </div>
 
             <!-- SEARCH -->
@@ -438,7 +439,7 @@ UI.registerPage('help', async (container) => {
             </div>
 
             <div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:0.85rem;">
-                📻 USPS Asset Tracker v1.0 — Author: WB — 2.13.2026
+                📻 ${_info.app} v${_info.version} — Author: ${_info.author} — ${_info.date}
             </div>
         </div>
     `;

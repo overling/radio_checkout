@@ -72,22 +72,42 @@ function applyTheme(theme) {
             }
         }
 
-        // Info button (?) — version/author popup
-        document.getElementById('header-info-btn').addEventListener('click', () => {
+        // Info button (?) — version/author popup with integrity check
+        document.getElementById('header-info-btn').addEventListener('click', async () => {
+            const info = await _AP.getInfo();
+            const badge = info.valid
+                ? '<span style="color:var(--success);font-weight:700;">✅ Verified Original</span>'
+                : '<span style="color:var(--danger);font-weight:700;">⚠️ TAMPERED — This is not the original software</span>';
             UI.showModal('About USPS Asset Tracker', `
                 <div style="text-align:center;line-height:2;">
                     <div style="font-size:2.5rem;margin-bottom:0.25rem;">📻</div>
-                    <div style="font-size:1.3rem;font-weight:700;">USPS Asset Tracker</div>
+                    <div style="font-size:1.3rem;font-weight:700;">${info.app}</div>
                     <div style="font-size:0.95rem;color:var(--text-secondary);margin-bottom:0.75rem;">Radio & Equipment Management System</div>
                     <hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0;">
-                    <div style="font-size:1rem;"><strong>Version:</strong> 1.0</div>
-                    <div style="font-size:1rem;"><strong>Author:</strong> WB</div>
-                    <div style="font-size:1rem;"><strong>Date:</strong> 2.13.2026</div>
+                    <div style="font-size:1rem;"><strong>Version:</strong> ${info.version}</div>
+                    <div style="font-size:1rem;"><strong>Author:</strong> ${info.author}</div>
+                    <div style="font-size:1rem;"><strong>Date:</strong> ${info.date}</div>
+                    <div style="font-size:0.85rem;margin-top:0.25rem;">${badge}</div>
                     <hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0;">
                     <button class="btn btn-primary" onclick="UI.closeModal(); UI.navigateTo('help');" style="margin-top:0.25rem;">📖 Open Instruction Manual</button>
                 </div>
             `);
         });
+
+        // Periodic authorship integrity check (every 5 min)
+        setInterval(async () => {
+            const ok = await _AP.check();
+            if (!ok) {
+                document.title = '⚠️ TAMPERED SOFTWARE';
+                const h1 = document.querySelector('#app-header h1');
+                if (h1 && !h1.dataset.tamperWarned) {
+                    h1.dataset.tamperWarned = 'true';
+                    h1.innerHTML += ' <span style="color:#ff0;font-size:0.7rem;">⚠️ MODIFIED</span>';
+                }
+            }
+        }, 5 * 60 * 1000);
+        // Initial check on startup
+        _AP.check();
 
         // Navigate to home
         UI.navigateTo('home');
