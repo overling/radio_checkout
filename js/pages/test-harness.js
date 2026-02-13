@@ -669,6 +669,14 @@ UI.registerPage('test-harness', async (container) => {
             const TEST_BADGE_A = 'TESTBADGE_A';
             const TEST_BADGE_B = 'TESTBADGE_B';
 
+            // Clean up leftover transactions from previous test runs
+            const oldTxns = await DB.getAll('transactions');
+            for (const t of oldTxns) {
+                if (t.technicianId === TEST_BADGE_A || t.technicianId === TEST_BADGE_B) {
+                    await DB.remove('transactions', t.id);
+                }
+            }
+
             // Create fresh test technicians to avoid conflicts
             await DB.put('technicians', Models.createTechnician({ badgeId: TEST_BADGE_A, firstName: 'Test', lastName: 'AlphaUser' }));
             await DB.put('technicians', Models.createTechnician({ badgeId: TEST_BADGE_B, firstName: 'Test', lastName: 'BetaUser' }));
@@ -824,16 +832,16 @@ UI.registerPage('test-harness', async (container) => {
             const syncSettings = await NetworkSync.getSettings();
             assert('NetworkSync.getSettings()', !!syncSettings, `enabled=${syncSettings.enabled}`);
             assert('Sync has intervalHours', typeof syncSettings.intervalHours === 'number', `${syncSettings.intervalHours}h`);
-            assert('Sync has networkPath field', 'networkPath' in syncSettings);
+            assert('Sync has folderName field', 'folderName' in syncSettings);
             assert('Sync has retry tracking', 'retryCount' in syncSettings);
-            assert('Sync has integrity tracking', 'integrityOk' in syncSettings);
+            assert('Sync has nextSlot tracking', 'nextSlot' in syncSettings);
             assert('Sync default interval is 8h', syncSettings.intervalHours === 8 || syncSettings.intervalHours > 0, `${syncSettings.intervalHours}h`);
 
             // Test save/load settings round-trip
-            const testSettings = { ...syncSettings, networkPath: '\\\\TEST\\share', intervalHours: 4 };
+            const testSettings = { ...syncSettings, folderName: 'TestBackupFolder', intervalHours: 4 };
             await NetworkSync.saveSettings(testSettings);
             const reloaded = await NetworkSync.getSettings();
-            assert('Sync settings round-trip', reloaded.networkPath === '\\\\TEST\\share' && reloaded.intervalHours === 4, 'Save/load OK');
+            assert('Sync settings round-trip', reloaded.folderName === 'TestBackupFolder' && reloaded.intervalHours === 4, 'Save/load OK');
             // Restore
             await NetworkSync.saveSettings(syncSettings);
         } catch (e) {
@@ -1005,6 +1013,13 @@ UI.registerPage('test-harness', async (container) => {
         try {
             assert('_fleetModalData exists', typeof _fleetModalData === 'object');
             assert('_showFleetModal exists', typeof _showFleetModal === 'function');
+
+            // _fleetModalData is populated when the home page renders.
+            // Trigger a home page render to populate it, then switch back.
+            const prevContent = document.getElementById('app-content').innerHTML;
+            await UI.navigateTo('home');
+            await new Promise(r => setTimeout(r, 300)); // let home page render
+
             const radioCount = (await DB.getAll('radios')).length;
             const modalKeys = Object.keys(_fleetModalData);
             assert('Fleet modal data populated', modalKeys.length > 0, `${modalKeys.length} radios`);
@@ -1014,6 +1029,9 @@ UI.registerPage('test-harness', async (container) => {
             const sample = _fleetModalData[sampleId];
             assert('Fleet modal entry has radio', !!sample && !!sample.radio && sample.radio.id === sampleId);
             assert('Fleet modal entry has status flags', typeof sample.isOut === 'boolean' && typeof sample.isMaint === 'boolean');
+
+            // Navigate back to test-harness
+            await UI.navigateTo('test-harness');
         } catch (e) {
             assert('Fleet Card Modal', false, e.message);
         }
