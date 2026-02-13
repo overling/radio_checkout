@@ -69,17 +69,72 @@ function applyTheme(theme) {
         // Start auto-backup scheduler
         AutoBackup.start();
 
-        // Folder sync: start periodic timer if enabled and handle is set
-        // (Handle requires user to click "Choose Folder" each session — browser security)
-        if (typeof NetworkSync !== 'undefined') {
-            try {
-                NetworkSync.start(); // Will only run timer if enabled + handle exists
-            } catch (e) {
-                console.warn('Folder sync startup:', e.message);
+        // ===== Auto-Save System =====
+        // The browser REQUIRES one user click per session to grant file write access.
+        // After that click, everything saves automatically and silently.
+        //
+        // On startup: if sync/snapshot was set up before, show a popup asking to reconnect.
+        // The clerk just clicks one big button and everything works.
+
+        const syncSettings = await NetworkSync.getSettings();
+        const lastSnapshot = await Snapshot.getLastSaveTime();
+        const needsReconnect = syncSettings.enabled || lastSnapshot;
+
+        async function _connectAndStartAutoSave() {
+            // Try to reconnect the sync folder
+            if (syncSettings.enabled && NetworkSync.isSupported()) {
+                const result = await NetworkSync.chooseFolder();
+                if (result.ok) {
+                    NetworkSync.start();
+                    // Also immediately push a backup
+                    NetworkSync.pushToNetwork();
+                }
             }
+
+            // Also get a handle for the local snapshot file
+            try {
+                await Snapshot.save();
+            } catch (e) {
+                console.warn('Snapshot save skipped:', e.message);
+            }
+
+            // Remove the reconnect banner if it exists
+            const banner = document.getElementById('reconnect-banner');
+            if (banner) banner.remove();
+
+            UI.toast('Auto-save connected ✅ Your data will save automatically.', 'success');
         }
 
-        // Save snapshot button
+        if (needsReconnect) {
+            // Show a big, obvious, friendly banner at the top
+            const banner = document.createElement('div');
+            banner.id = 'reconnect-banner';
+            banner.style.cssText = 'background:linear-gradient(135deg,#1565c0,#1a73e8);color:#fff;padding:1rem 1.5rem;text-align:center;position:sticky;top:0;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+            banner.innerHTML = `
+                <div style="font-size:1.1rem;font-weight:700;margin-bottom:0.4rem;">
+                    💾 Click the button below to connect your backup folders
+                </div>
+                <div style="font-size:0.85rem;margin-bottom:0.75rem;opacity:0.9;">
+                    Your browser needs permission to save files. This only takes one click and then everything saves automatically.
+                </div>
+                <button id="reconnect-btn" style="background:#fff;color:#1565c0;border:none;padding:0.6rem 2rem;border-radius:8px;font-size:1.1rem;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.2);">
+                    📂 Click Here to Connect & Continue
+                </button>
+                <div style="font-size:0.7rem;margin-top:0.4rem;opacity:0.7;">
+                    You can also click 💾 Save in the top bar at any time
+                </div>
+            `;
+            document.body.insertBefore(banner, document.body.firstChild);
+
+            document.getElementById('reconnect-btn').addEventListener('click', async () => {
+                const btn = document.getElementById('reconnect-btn');
+                btn.textContent = '⏳ Connecting...';
+                btn.disabled = true;
+                await _connectAndStartAutoSave();
+            });
+        }
+
+        // Save button in header — always works as manual save + reconnect
         document.getElementById('header-save-btn').addEventListener('click', async () => {
             const btn = document.getElementById('header-save-btn');
             btn.textContent = '⏳ Saving...';
@@ -88,9 +143,12 @@ function applyTheme(theme) {
                 const result = await Snapshot.save();
                 if (result.ok) {
                     const kb = (result.size / 1024).toFixed(1);
-                    UI.toast(`Snapshot saved (${kb} KB) — copy db-snapshot.json with your app folder`, 'success');
+                    UI.toast(`Saved (${kb} KB) — auto-save is now active this session ✅`, 'success');
                     btn.innerHTML = '💾 Saved ✓';
                     setTimeout(() => { btn.innerHTML = '💾 Save'; }, 3000);
+                    // Remove reconnect banner if still showing
+                    const banner = document.getElementById('reconnect-banner');
+                    if (banner) banner.remove();
                 } else {
                     UI.toast('Save cancelled', 'info');
                     btn.innerHTML = '💾 Save';
@@ -102,26 +160,21 @@ function applyTheme(theme) {
             btn.disabled = false;
         });
 
-        // Auto-save silently after major DB operations (if file handle is set)
+        // Auto-save silently after any DB write (if file handle is active)
         const _origPut = DB.put.bind(DB);
         let _saveTimer = null;
         DB.put = async function(storeName, data) {
             const result = await _origPut(storeName, data);
-            // Debounce: save snapshot 5 seconds after last DB write
-            if (Snapshot.hasFileHandle()) {
+            // Debounce: save 5 seconds after last DB write
+            if (Snapshot.hasFileHandle() || NetworkSync.hasHandle()) {
                 clearTimeout(_saveTimer);
-                _saveTimer = setTimeout(() => Snapshot.silentSave(), 5000);
+                _saveTimer = setTimeout(async () => {
+                    if (Snapshot.hasFileHandle()) Snapshot.silentSave();
+                    if (NetworkSync.hasHandle()) NetworkSync.pushToNetwork();
+                }, 5000);
             }
             return result;
         };
-
-        // Warn before closing if there are unsaved changes
-        window.addEventListener('beforeunload', (e) => {
-            if (!Snapshot.hasFileHandle()) {
-                // Only warn if they haven't saved at all this session
-                // (don't annoy users who already saved)
-            }
-        });
 
         // Info button (?) — version/author popup with integrity check
         document.getElementById('header-info-btn').addEventListener('click', async () => {
