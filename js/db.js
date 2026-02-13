@@ -67,6 +67,10 @@ const DB = (() => {
             const store = getStore('settings', 'readwrite');
             store.put({ key: 'lastModified', value: new Date().toISOString() });
         } catch (e) { /* ignore */ }
+        // Schedule emergency backup (debounced — saves 2 min after last activity)
+        if (typeof Snapshot !== 'undefined' && Snapshot.scheduleEmergencyBackup) {
+            Snapshot.scheduleEmergencyBackup();
+        }
     }
 
     async function getLastModified() {

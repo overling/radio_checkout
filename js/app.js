@@ -231,7 +231,7 @@ function applyTheme(theme) {
                     <button id="emergency-restore-btn" class="btn" style="background:var(--danger);color:#fff;margin-top:0.25rem;font-size:0.85rem;">
                         🚨 Emergency Database Restoration
                     </button>
-                    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.15rem;">May be up to 8 hours old — use only if all else fails</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.15rem;">Saves 2 min after last activity — use only if all else fails</div>
                     ${emergInfo}
                 </div>
             `);
@@ -241,7 +241,7 @@ function applyTheme(theme) {
                 const emergBtn = document.getElementById('emergency-restore-btn');
                 if (emergBtn) {
                     emergBtn.addEventListener('click', async () => {
-                        if (!confirm('⚠️ EMERGENCY RESTORE\n\nThis will replace your current database with the emergency backup file (db-emergency.bak).\n\nThis backup may be up to 8 HOURS OLD. Some recent data may be lost.\n\nOnly use this if:\n• Your main database is empty or corrupted\n• The snapshot file (db-snapshot.json) is missing\n• The network backup folder is unavailable\n\nAre you sure you want to continue?')) return;
+                        if (!confirm('⚠️ EMERGENCY RESTORE\n\nThis will replace your current database with the emergency backup.\n\nThis backup is saved 2 minutes after the last activity. Some very recent changes may be missing.\n\nOnly use this if:\n• Your main database is empty or corrupted\n• The snapshot file (db-snapshot.json) is missing\n• The network backup folder is unavailable\n\nAre you sure you want to continue?')) return;
                         if (!confirm('⚠️ FINAL WARNING\n\nThis will OVERWRITE your current database.\n\nClick OK to proceed with emergency restoration.')) return;
 
                         emergBtn.textContent = '⏳ Restoring...';

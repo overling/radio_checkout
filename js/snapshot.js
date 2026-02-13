@@ -13,10 +13,13 @@
 const Snapshot = (() => {
     const SNAPSHOT_FILE = 'db-snapshot.json';
     const EMERGENCY_FILE = 'db-emergency.bak';
-    const EMERGENCY_INTERVAL_MS = 8 * 60 * 60 * 1000; // 8 hours
+    const EMERGENCY_DEBOUNCE_MS = 2 * 60 * 1000;       // 2 minutes after last activity
+    const EMERGENCY_MAX_INTERVAL_MS = 8 * 60 * 60 * 1000; // 8 hours safety net
     let _dirHandle = null;   // Directory handle for the app folder
     let _fileHandle = null;  // File handle for db-snapshot.json (within _dirHandle)
-    let _emergencyTimer = null;
+    let _emergencyDebounce = null;  // Debounce timer (resets on each DB write)
+    let _emergencyMaxTimer = null;  // Safety-net timer (fixed 8-hour interval)
+    let _emergencyStarted = false;
 
     /**
      * Export the full database to a JSON object.
@@ -150,7 +153,7 @@ const Snapshot = (() => {
             const now = new Date().toISOString();
             data._emergency = {
                 timestamp: now,
-                warning: 'EMERGENCY BACKUP — May be up to 8 hours old. Use only if all other restore methods fail.'
+                warning: 'EMERGENCY BACKUP — use only if all other restore methods fail.'
             };
             const json = JSON.stringify(data, null, 2);
 
@@ -176,17 +179,36 @@ const Snapshot = (() => {
     }
 
     /**
-     * Start the 8-hour emergency backup timer.
-     * Starts immediately on app load — no folder connection required.
+     * Called when any DB write happens. Resets the 2-minute debounce timer.
+     * After 2 minutes of inactivity the emergency backup is saved.
+     */
+    function scheduleEmergencyBackup() {
+        if (!_emergencyStarted) return;
+        clearTimeout(_emergencyDebounce);
+        _emergencyDebounce = setTimeout(() => {
+            _writeEmergencyBackup();
+        }, EMERGENCY_DEBOUNCE_MS);
+    }
+
+    /**
+     * Start the emergency backup system.
+     * - Writes one backup immediately on startup.
+     * - After that, saves 2 minutes after the last DB activity (debounced).
+     * - Also saves every 8 hours as a safety net even if there's no activity.
      */
     function _startEmergencyTimer() {
-        if (_emergencyTimer) return; // already running
-        // Write one immediately
+        if (_emergencyStarted) return;
+        _emergencyStarted = true;
+
+        // Write one immediately on startup
         _writeEmergencyBackup();
-        _emergencyTimer = setInterval(() => {
+
+        // Safety-net: save every 8 hours regardless of activity
+        _emergencyMaxTimer = setInterval(() => {
             _writeEmergencyBackup();
-        }, EMERGENCY_INTERVAL_MS);
-        console.log('Emergency backup timer started (every 8 hours)');
+        }, EMERGENCY_MAX_INTERVAL_MS);
+
+        console.log('Emergency backup started (debounced: 2 min after activity, safety net: every 8 hours)');
     }
 
     /**
@@ -345,6 +367,7 @@ const Snapshot = (() => {
         emergencyRestore,
         getLastEmergencyTime,
         startEmergencyTimer: _startEmergencyTimer,
+        scheduleEmergencyBackup,
         SNAPSHOT_FILE,
         EMERGENCY_FILE
     };
