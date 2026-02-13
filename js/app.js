@@ -85,8 +85,29 @@ function applyTheme(theme) {
             if (syncSettings.enabled && NetworkSync.isSupported()) {
                 const result = await NetworkSync.chooseFolder();
                 if (result.ok) {
+                    // Check if the sync folder has NEWER data than our local DB
+                    const localModified = await DB.getLastModified();
+                    const backup = await NetworkSync.pullFromFolder();
+                    const backupTs = backup?.timestamp;
+
+                    if (backupTs && localModified && new Date(backupTs) > new Date(localModified)) {
+                        // Sync folder is newer — load it
+                        const { _sync, ...importData } = backup.data;
+                        await DB.importAll(importData);
+                        UI.toast('Loaded newer data from backup folder ✅', 'success');
+                        console.log(`Loaded newer backup (${backupTs}) over local (${localModified})`);
+                    } else if (!localModified && backup?.data) {
+                        // No local timestamp — DB might be empty, load backup
+                        const localCount = await DB.count('radios');
+                        if (localCount === 0) {
+                            const { _sync, ...importData } = backup.data;
+                            await DB.importAll(importData);
+                            UI.toast('Database restored from backup folder ✅', 'success');
+                        }
+                    }
+
                     NetworkSync.start();
-                    // Also immediately push a backup
+                    // Push our data (will be skipped if backup is still newer)
                     NetworkSync.pushToNetwork();
                 }
             }

@@ -61,10 +61,28 @@ const DB = (() => {
         });
     }
 
+    // Track when data was last changed (for sync conflict resolution)
+    async function _touchModified() {
+        try {
+            const store = getStore('settings', 'readwrite');
+            store.put({ key: 'lastModified', value: new Date().toISOString() });
+        } catch (e) { /* ignore */ }
+    }
+
+    async function getLastModified() {
+        const result = await get('settings', 'lastModified');
+        return result ? result.value : null;
+    }
+
     async function put(storeName, data) {
         await open();
         const store = getStore(storeName, 'readwrite');
-        return promisifyRequest(store.put(data));
+        const result = await promisifyRequest(store.put(data));
+        // Update lastModified for data stores (not internal settings writes)
+        if (storeName !== 'settings' && storeName !== 'backups') {
+            _touchModified();
+        }
+        return result;
     }
 
     async function get(storeName, id) {
@@ -89,7 +107,9 @@ const DB = (() => {
     async function remove(storeName, id) {
         await open();
         const store = getStore(storeName, 'readwrite');
-        return promisifyRequest(store.delete(id));
+        const result = await promisifyRequest(store.delete(id));
+        if (storeName !== 'settings' && storeName !== 'backups') _touchModified();
+        return result;
     }
 
     async function count(storeName) {
@@ -101,7 +121,9 @@ const DB = (() => {
     async function clear(storeName) {
         await open();
         const store = getStore(storeName, 'readwrite');
-        return promisifyRequest(store.clear());
+        const result = await promisifyRequest(store.clear());
+        if (storeName !== 'settings' && storeName !== 'backups') _touchModified();
+        return result;
     }
 
     // Bulk put for imports
@@ -113,7 +135,10 @@ const DB = (() => {
             store.put(item);
         }
         return new Promise((resolve, reject) => {
-            tx.oncomplete = () => resolve();
+            tx.oncomplete = () => {
+                if (storeName !== 'settings' && storeName !== 'backups') _touchModified();
+                resolve();
+            };
             tx.onerror = () => reject(tx.error);
         });
     }
@@ -164,6 +189,7 @@ const DB = (() => {
         getSetting,
         setSetting,
         exportAll,
-        importAll
+        importAll,
+        getLastModified
     };
 })();

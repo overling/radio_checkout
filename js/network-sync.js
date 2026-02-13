@@ -108,17 +108,30 @@ const NetworkSync = (() => {
 
     /**
      * Push database to the chosen folder (dual A/B backup).
+     * Will NOT overwrite a backup file that has a newer timestamp than our local DB.
      */
-    async function pushToNetwork() {
+    async function pushToNetwork(force = false) {
         const settings = await getSettings();
         if (!settings.enabled) return { ok: false, error: 'Sync not enabled' };
         if (!_dirHandle) return { ok: false, error: 'No folder handle — re-select folder in Supervisor' };
 
         try {
+            const localModified = await DB.getLastModified();
+            const now = new Date().toISOString();
+
+            // Check if either backup file is newer than our local data
+            if (!force && localModified) {
+                const newest = await _getNewestBackupTimestamp();
+                if (newest && new Date(newest) > new Date(localModified)) {
+                    console.log(`Sync skip: backup file is newer (${newest}) than local DB (${localModified})`);
+                    return { ok: false, skipped: true, error: 'Backup is newer than local — not overwriting' };
+                }
+            }
+
             const data = await DB.exportAll();
             const payload = {
                 _sync: {
-                    timestamp: new Date().toISOString(),
+                    timestamp: localModified || now,
                     slot: settings.nextSlot || 'A',
                     source: location.hostname || 'local'
                 },
@@ -130,7 +143,7 @@ const NetworkSync = (() => {
             await _writeFile(fileName, json);
 
             // Update settings
-            settings.lastPush = new Date().toISOString();
+            settings.lastPush = now;
             settings.lastPushStatus = 'success';
             settings.nextSlot = settings.nextSlot === 'A' ? 'B' : 'A';
             settings.retryCount = 0;
@@ -146,6 +159,20 @@ const NetworkSync = (() => {
             console.error('Sync push failed:', e.message);
             return { ok: false, error: e.message };
         }
+    }
+
+    /**
+     * Get the timestamp of the newest backup file in the folder.
+     */
+    async function _getNewestBackupTimestamp() {
+        const a = await _readFile(FILE_A);
+        const b = await _readFile(FILE_B);
+        const tsA = a?._sync?.timestamp ? new Date(a._sync.timestamp) : null;
+        const tsB = b?._sync?.timestamp ? new Date(b._sync.timestamp) : null;
+        if (tsA && tsB) return (tsA > tsB ? tsA : tsB).toISOString();
+        if (tsA) return tsA.toISOString();
+        if (tsB) return tsB.toISOString();
+        return null;
     }
 
     /**

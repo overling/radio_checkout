@@ -15,15 +15,32 @@ const Snapshot = (() => {
 
     /**
      * Export the full database to a JSON object.
+     * Uses the DB's lastModified timestamp so we can compare accurately.
      */
     async function _exportData() {
         const data = await DB.exportAll();
+        const localModified = await DB.getLastModified();
         data._snapshot = {
-            timestamp: new Date().toISOString(),
+            timestamp: localModified || new Date().toISOString(),
             version: '1.0',
             source: location.hostname || 'local'
         };
         return data;
+    }
+
+    /**
+     * Read the timestamp from an existing snapshot file handle.
+     */
+    async function _readExistingTimestamp() {
+        if (!_fileHandle) return null;
+        try {
+            const file = await _fileHandle.getFile();
+            const text = await file.text();
+            const data = JSON.parse(text);
+            return data?._snapshot?.timestamp || null;
+        } catch (e) {
+            return null;
+        }
     }
 
     /**
@@ -75,11 +92,20 @@ const Snapshot = (() => {
 
     /**
      * Silent re-save (only works if _fileHandle is already set from a previous save).
-     * Returns true if saved silently, false if no handle (user needs to click Save first).
+     * Will NOT overwrite the file if it contains newer data than our local DB.
+     * Returns true if saved, false if skipped or no handle.
      */
     async function silentSave() {
         if (!_fileHandle) return false;
         try {
+            // Check if existing file is newer than our local data
+            const localModified = await DB.getLastModified();
+            const existingTs = await _readExistingTimestamp();
+            if (localModified && existingTs && new Date(existingTs) > new Date(localModified)) {
+                console.log(`Snapshot skip: file is newer (${existingTs}) than local DB (${localModified})`);
+                return false;
+            }
+
             const data = await _exportData();
             const json = JSON.stringify(data, null, 2);
             const writable = await _fileHandle.createWritable();
