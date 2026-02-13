@@ -17,8 +17,19 @@ UI.registerPage('help', async (container) => {
                 <strong>Version:</strong> 1.0 &nbsp;|&nbsp; <strong>Author:</strong> WB &nbsp;|&nbsp; <strong>Date:</strong> 2.13.2026
             </div>
 
+            <!-- SEARCH -->
+            <div class="card" style="margin-bottom:1rem;">
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span style="font-size:1.2rem;">🔍</span>
+                    <input type="text" id="help-search" placeholder="Search the manual... (e.g. overdue, scan, password, print)" autocomplete="off"
+                        style="flex:1;padding:0.6rem 0.8rem;font-size:1rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--input-bg);color:var(--text);">
+                    <button class="btn btn-sm btn-outline" id="help-search-clear" style="display:none;">✕ Clear</button>
+                </div>
+                <div id="help-search-info" style="font-size:0.8rem;color:var(--text-muted);margin-top:0.4rem;display:none;"></div>
+            </div>
+
             <!-- TABLE OF CONTENTS -->
-            <div class="card" style="margin-bottom:1.5rem;">
+            <div class="card" style="margin-bottom:1.5rem;" id="help-toc-card">
                 <div class="card-header"><h3>📋 Table of Contents</h3></div>
                 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;font-size:0.95rem;">
                     <a href="#help-home" class="help-toc-link">🏠 Home Dashboard</a>
@@ -440,4 +451,170 @@ UI.registerPage('help', async (container) => {
             if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
+
+    // ===== Fuzzy search =====
+    const searchInput = document.getElementById('help-search');
+    const searchInfo = document.getElementById('help-search-info');
+    const searchClear = document.getElementById('help-search-clear');
+    const tocCard = document.getElementById('help-toc-card');
+    const sections = container.querySelectorAll('.help-section');
+
+    // Common synonyms / fuzzy keyword map
+    const synonyms = {
+        'login': ['password', 'unlock', 'supervisor', 'lock'],
+        'pw': ['password'],
+        'pass': ['password'],
+        'scan': ['scanner', 'barcode', 'qr', 'camera', 'scan'],
+        'label': ['print', 'barcode', 'qr', 'codes'],
+        'barcode': ['print', 'label', 'qr', 'codes'],
+        'qr': ['print', 'label', 'barcode', 'codes'],
+        'backup': ['export', 'sync', 'network', 'save'],
+        'save': ['export', 'backup', 'sync'],
+        'delete': ['clear', 'erase', 'remove', 'wipe'],
+        'erase': ['clear', 'delete', 'remove'],
+        'wipe': ['clear', 'delete', 'erase'],
+        'broken': ['damaged', 'maintenance', 'repair'],
+        'repair': ['damaged', 'maintenance', 'broken'],
+        'fix': ['damaged', 'maintenance', 'repair'],
+        'late': ['overdue', 'hours', 'threshold'],
+        'missing': ['overdue', 'lost'],
+        'lost': ['missing', 'retired'],
+        'theme': ['dark', 'light', 'color', 'usps'],
+        'dark': ['theme', 'night', 'midnight'],
+        'color': ['theme'],
+        'tech': ['technician', 'badge'],
+        'badge': ['technician', 'tech', 'scan'],
+        'email': ['alert', 'notify', 'overdue', 'contact'],
+        'alert': ['email', 'overdue', 'notify'],
+        'notify': ['email', 'alert', 'overdue'],
+        'sync': ['network', 'backup', 'push', 'pull'],
+        'network': ['sync', 'backup', 'push', 'pull'],
+        'add': ['create', 'new', 'assets'],
+        'new': ['add', 'create'],
+        'checkout': ['check out', 'scan', 'radio'],
+        'checkin': ['return', 'check in', 'scan'],
+        'import': ['load', 'upload', 'json'],
+        'xlsx': ['excel', 'export', 'spreadsheet'],
+        'excel': ['xlsx', 'export', 'spreadsheet'],
+        'prefix': ['scanner', 'wv', 'bat', 'category'],
+        'wv': ['prefix', 'radio', 'scanner'],
+        'bat': ['prefix', 'battery', 'scanner'],
+        'manual': ['help', 'instructions', 'guide'],
+        'help': ['manual', 'instructions', 'guide']
+    };
+
+    function expandQuery(query) {
+        const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+        const expanded = new Set(words);
+        for (const word of words) {
+            // Add synonyms
+            if (synonyms[word]) {
+                synonyms[word].forEach(s => expanded.add(s));
+            }
+            // Add partial matches from synonym keys
+            for (const key of Object.keys(synonyms)) {
+                if (key.includes(word) || word.includes(key)) {
+                    expanded.add(key);
+                    synonyms[key].forEach(s => expanded.add(s));
+                }
+            }
+        }
+        return [...expanded];
+    }
+
+    function searchSections(query) {
+        if (!query.trim()) {
+            // Show everything
+            sections.forEach(s => {
+                s.style.display = '';
+                // Remove highlights
+                s.querySelectorAll('.help-highlight').forEach(h => {
+                    h.replaceWith(document.createTextNode(h.textContent));
+                });
+            });
+            tocCard.style.display = '';
+            searchInfo.style.display = 'none';
+            searchClear.style.display = 'none';
+            return;
+        }
+
+        const terms = expandQuery(query);
+        let matchCount = 0;
+        const matchedSections = [];
+
+        sections.forEach(section => {
+            const text = section.textContent.toLowerCase();
+            const score = terms.reduce((acc, term) => acc + (text.includes(term) ? 1 : 0), 0);
+
+            if (score > 0) {
+                section.style.display = '';
+                matchCount++;
+                matchedSections.push({ section, score });
+
+                // Highlight matching terms in visible text
+                section.querySelectorAll('.help-highlight').forEach(h => {
+                    h.replaceWith(document.createTextNode(h.textContent));
+                });
+                highlightTerms(section, query.toLowerCase().split(/\s+/).filter(Boolean));
+            } else {
+                section.style.display = 'none';
+            }
+        });
+
+        // Sort matched sections to top (move DOM nodes)
+        matchedSections.sort((a, b) => b.score - a.score);
+
+        tocCard.style.display = 'none';
+        searchClear.style.display = 'inline-flex';
+        searchInfo.style.display = 'block';
+
+        if (matchCount === 0) {
+            searchInfo.innerHTML = `No results for "<strong>${query}</strong>". Try different keywords.`;
+        } else {
+            const termList = terms.slice(0, 8).join(', ');
+            searchInfo.innerHTML = `Found <strong>${matchCount}</strong> section${matchCount !== 1 ? 's' : ''} matching: ${termList}${terms.length > 8 ? '…' : ''}`;
+        }
+    }
+
+    function highlightTerms(section, words) {
+        const walker = document.createTreeWalker(section, NodeFilter.SHOW_TEXT, null, false);
+        const textNodes = [];
+        while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+        for (const node of textNodes) {
+            if (!node.textContent.trim()) continue;
+            // Skip if parent is already a highlight or an input/script
+            if (node.parentElement.classList?.contains('help-highlight')) continue;
+            if (['SCRIPT', 'STYLE', 'INPUT', 'TEXTAREA'].includes(node.parentElement.tagName)) continue;
+
+            let html = node.textContent;
+            let changed = false;
+            for (const word of words) {
+                if (word.length < 2) continue;
+                const regex = new RegExp(`(${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                if (regex.test(html)) {
+                    html = html.replace(regex, '<mark class="help-highlight" style="background:var(--warning-light);padding:0 2px;border-radius:2px;">$1</mark>');
+                    changed = true;
+                }
+            }
+            if (changed) {
+                const span = document.createElement('span');
+                span.innerHTML = html;
+                node.replaceWith(span);
+            }
+        }
+    }
+
+    searchInput.addEventListener('input', UI.debounce(() => {
+        searchSections(searchInput.value);
+    }, 200));
+
+    searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        searchSections('');
+        searchInput.focus();
+    });
+
+    // Auto-focus search on page load
+    setTimeout(() => searchInput.focus(), 100);
 });
