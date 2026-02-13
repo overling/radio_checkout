@@ -73,6 +73,9 @@ function applyTheme(theme) {
         // Start auto-backup scheduler
         AutoBackup.start();
 
+        // Start emergency backup timer (saves to IndexedDB every 8 hours — no folder needed)
+        Snapshot.startEmergencyTimer();
+
         // ===== Auto-Save System =====
         // The browser REQUIRES one user click per session to grant file write access.
         // After that click, everything saves automatically and silently.
@@ -210,7 +213,7 @@ function applyTheme(theme) {
             const emergTime = await Snapshot.getLastEmergencyTime();
             const emergInfo = emergTime
                 ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">Last emergency backup: ${new Date(emergTime).toLocaleString()}</div>`
-                : '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">No emergency backup yet — connect your folder first</div>';
+                : '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">No emergency backup yet — one will be created automatically</div>';
 
             UI.showModal('About USPS Asset Tracker', `
                 <div style="text-align:center;line-height:2;">

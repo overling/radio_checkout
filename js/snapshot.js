@@ -137,24 +137,37 @@ const Snapshot = (() => {
         }
     }
 
-    // ===== Emergency Backup (.bak) — updated every 8 hours =====
+    // ===== Emergency Backup — stored in IndexedDB (no folder needed) =====
+    // Also writes a copy to the folder as db-emergency.bak IF the folder is connected.
 
     /**
-     * Write the emergency backup file. No timestamp guard — always overwrites.
-     * This is the safety net; it's always up to date (within 8 hours).
+     * Write the emergency backup. Always saves to IndexedDB (works without any
+     * folder connection). Also writes to the folder as a bonus copy if available.
      */
     async function _writeEmergencyBackup() {
-        if (!_dirHandle) return false;
         try {
             const data = await _exportData();
+            const now = new Date().toISOString();
             data._emergency = {
-                timestamp: new Date().toISOString(),
+                timestamp: now,
                 warning: 'EMERGENCY BACKUP — May be up to 8 hours old. Use only if all other restore methods fail.'
             };
             const json = JSON.stringify(data, null, 2);
-            await _writeToDir(EMERGENCY_FILE, json);
-            await DB.setSetting('lastEmergencyBackupTime', new Date().toISOString());
-            console.log('Emergency backup saved:', (json.length / 1024).toFixed(1) + ' KB');
+
+            // Always save to IndexedDB — no folder needed
+            await DB.setSetting('emergencyBackupData', json);
+            await DB.setSetting('lastEmergencyBackupTime', now);
+            console.log('Emergency backup saved to IndexedDB:', (json.length / 1024).toFixed(1) + ' KB');
+
+            // Also write to folder if connected (bonus copy)
+            if (_dirHandle) {
+                try {
+                    await _writeToDir(EMERGENCY_FILE, json);
+                    console.log('Emergency backup also written to folder');
+                } catch (e) {
+                    // Folder write failed — that's fine, IndexedDB copy is safe
+                }
+            }
             return true;
         } catch (e) {
             console.warn('Emergency backup failed:', e.message);
@@ -164,10 +177,11 @@ const Snapshot = (() => {
 
     /**
      * Start the 8-hour emergency backup timer.
+     * Starts immediately on app load — no folder connection required.
      */
     function _startEmergencyTimer() {
         if (_emergencyTimer) return; // already running
-        // Write one immediately on connect
+        // Write one immediately
         _writeEmergencyBackup();
         _emergencyTimer = setInterval(() => {
             _writeEmergencyBackup();
@@ -176,14 +190,27 @@ const Snapshot = (() => {
     }
 
     /**
-     * Restore from the emergency backup file.
+     * Restore from the emergency backup.
+     * Reads from IndexedDB first (always available), then tries folder file.
      * Returns { restored, radioCount, techCount, timestamp } or { restored: false }.
      */
     async function emergencyRestore() {
-        // Try reading from dir handle first
-        let data = await _readFromDir(EMERGENCY_FILE);
+        let data = null;
 
-        // If no dir handle, try fetching from the app folder
+        // 1. Try IndexedDB (always available, no folder needed)
+        try {
+            const json = await DB.getSetting('emergencyBackupData', null);
+            if (json) {
+                data = JSON.parse(json);
+            }
+        } catch (e) { /* ignore */ }
+
+        // 2. Try reading from dir handle
+        if (!data) {
+            data = await _readFromDir(EMERGENCY_FILE);
+        }
+
+        // 3. Try fetching from the app folder (if served by a web server)
         if (!data) {
             try {
                 const resp = await fetch(EMERGENCY_FILE + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -197,7 +224,7 @@ const Snapshot = (() => {
         }
 
         if (!data || (!data.radios && !data.technicians)) {
-            return { restored: false, reason: 'no_emergency_file' };
+            return { restored: false, reason: 'no_emergency_backup' };
         }
 
         // Strip internal metadata before import
@@ -317,6 +344,7 @@ const Snapshot = (() => {
         hasFileHandle,
         emergencyRestore,
         getLastEmergencyTime,
+        startEmergencyTimer: _startEmergencyTimer,
         SNAPSHOT_FILE,
         EMERGENCY_FILE
     };
