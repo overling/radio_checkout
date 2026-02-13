@@ -432,10 +432,14 @@ UI.registerPage('test-harness', async (container) => {
             }
         }
 
-        // Mark 1 radio as Lost
+        // Mark 1 radio as Lost — force-return first if checked out
         const lostRadioId = 'WV-038';
         const lostRadio = await DB.get('radios', lostRadioId);
-        if (lostRadio && lostRadio.status !== 'Checked Out') {
+        if (lostRadio) {
+            if (lostRadio.status === 'Checked Out') {
+                lostRadio.status = 'Available';
+                await DB.put('radios', lostRadio);
+            }
             lostRadio.status = 'Lost';
             lostRadio.updatedAt = new Date().toISOString();
             await DB.put('radios', lostRadio);
@@ -449,12 +453,18 @@ UI.registerPage('test-harness', async (container) => {
                 timestamp: makeDate(2, 10)
             });
             log(`  Marked ${lostRadioId} as Lost`, 'warn');
+        } else {
+            log(`  WARNING: ${lostRadioId} not found`, 'error');
         }
 
-        // Mark 1 radio as Retired
+        // Mark 1 radio as Retired — force-return first if checked out
         const retiredRadioId = 'WV-039';
         const retiredRadio = await DB.get('radios', retiredRadioId);
-        if (retiredRadio && retiredRadio.status !== 'Checked Out') {
+        if (retiredRadio) {
+            if (retiredRadio.status === 'Checked Out') {
+                retiredRadio.status = 'Available';
+                await DB.put('radios', retiredRadio);
+            }
             retiredRadio.status = 'Retired';
             retiredRadio.outOfServiceDate = makeDate(3, 14);
             retiredRadio.updatedAt = new Date().toISOString();
@@ -470,6 +480,8 @@ UI.registerPage('test-harness', async (container) => {
                 timestamp: makeDate(3, 14)
             });
             log(`  Marked ${retiredRadioId} as Retired`, 'info');
+        } else {
+            log(`  WARNING: ${retiredRadioId} not found`, 'error');
         }
 
         // Create a radio with high repair count for the supervisor "high frequency" list
@@ -661,7 +673,17 @@ UI.registerPage('test-harness', async (container) => {
             await DB.put('technicians', Models.createTechnician({ badgeId: TEST_BADGE_A, firstName: 'Test', lastName: 'AlphaUser' }));
             await DB.put('technicians', Models.createTechnician({ badgeId: TEST_BADGE_B, firstName: 'Test', lastName: 'BetaUser' }));
 
-            // Find available radios to test with (re-read in case state changed)
+            // Ensure we have available radios — force-return WV-040 and WV-037 for testing
+            for (const forceId of ['WV-040', 'WV-037']) {
+                const fr = await DB.get('radios', forceId);
+                if (fr && fr.status === 'Checked Out') {
+                    fr.status = 'Available';
+                    fr.updatedAt = new Date().toISOString();
+                    await DB.put('radios', fr);
+                }
+            }
+
+            // Find available radios to test with (re-read)
             const freshRadios = await DB.getAll('radios');
             const testRadio = freshRadios.find(r => r.status === 'Available');
 
