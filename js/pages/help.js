@@ -306,7 +306,7 @@ UI.registerPage('help', async (container) => {
                     <div class="help-step">
                         <div class="help-step-icon">1️⃣</div>
                         <div>
-                            <strong>Choose code type:</strong> QR Code or Barcode (Code 128).
+                            <strong>Choose code type:</strong> QR Code or Barcode (Code 128). The label preview updates automatically when you change any setting.
                         </div>
                     </div>
                     <div class="help-step">
@@ -322,7 +322,34 @@ UI.registerPage('help', async (container) => {
                     <div class="help-step">
                         <div class="help-step-icon">3️⃣</div>
                         <div>
-                            Click <strong>Generate</strong> to preview, then <strong>🖨️ Print Labels</strong> to print.
+                            <strong>Choose label size:</strong>
+                            <ul>
+                                <li><strong>QR Codes:</strong> ½″ × ½″ (default), ¾″ × ¾″, or 1″ × 1″</li>
+                                <li><strong>Barcodes:</strong> ¼″ tall (default), ⅜″ tall, or ½″ tall</li>
+                            </ul>
+                            The size options change automatically when you switch between QR and Barcode.
+                        </div>
+                    </div>
+                    <div class="help-step">
+                        <div class="help-step-icon">4️⃣</div>
+                        <div>
+                            Click <strong>🖨️ Print Labels</strong> to print. A clean print window opens with only the labels — no extra page content.
+                        </div>
+                    </div>
+                    <div class="help-step">
+                        <div class="help-step-icon">⚙️</div>
+                        <div>
+                            <strong>Remove browser headers &amp; footers from printout:</strong>
+                            <p style="margin:0.25rem 0;">By default, your browser may add a title, URL, page number, and date to the top and bottom of printed pages. To remove them:</p>
+                            <ol style="margin:0.25rem 0;">
+                                <li>When the print dialog opens, click <strong>"More settings"</strong> (Chrome/Edge)</li>
+                                <li>Find the <strong>"Headers and footers"</strong> checkbox</li>
+                                <li><strong>Uncheck it</strong></li>
+                            </ol>
+                            <p style="margin:0.25rem 0;">Your browser will remember this setting for future prints. You only need to do this <strong>once</strong>.</p>
+                            <div style="background:var(--info-light, #e8f4fd);border:1px solid var(--info, #2196F3);border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.4rem;font-size:0.85rem;">
+                                <strong>Tip:</strong> Also set <strong>Margins</strong> to <strong>"None"</strong> or <strong>"Minimum"</strong> in the print dialog for the cleanest label output.
+                            </div>
                         </div>
                     </div>
                 </div>
