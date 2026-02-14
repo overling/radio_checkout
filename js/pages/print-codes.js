@@ -138,31 +138,62 @@ UI.registerPage('print-codes', async (container) => {
     // Navigation shortcut
     document.getElementById('goto-assets-from-print').addEventListener('click', () => UI.navigateTo('assets'));
 
-    // Code type change — update size options
-    document.getElementById('pc-code-type').addEventListener('change', _updateSizeOptions);
+    // Code type change — update size options and auto-regenerate
+    document.getElementById('pc-code-type').addEventListener('change', () => {
+        _updateSizeOptions();
+        _autoGenerate();
+    });
+
+    // Size change — auto-regenerate
+    document.getElementById('pc-label-size').addEventListener('change', _autoGenerate);
+
+    // Asset select change — auto-generate
+    document.getElementById('pc-asset-select').addEventListener('change', _autoGenerate);
+
+    // Custom text — auto-generate after typing stops
+    let _customDebounce = null;
+    document.getElementById('pc-custom-text').addEventListener('input', () => {
+        clearTimeout(_customDebounce);
+        _customDebounce = setTimeout(_autoGenerate, 400);
+    });
 
     // Mode toggle
     document.getElementById('pc-mode').addEventListener('change', (e) => {
         document.getElementById('pc-single-section').style.display = e.target.value === 'single' ? 'block' : 'none';
         document.getElementById('pc-batch-section').style.display = e.target.value === 'batch' ? 'block' : 'none';
+        _autoGenerate();
     });
 
-    // Batch select helpers
+    // Batch select helpers — auto-regenerate after selection
     document.getElementById('pc-select-all-radios').addEventListener('click', () => {
         document.querySelectorAll('.pc-batch-check[data-type="radio"]').forEach(cb => cb.checked = true);
+        _autoGenerate();
     });
     document.getElementById('pc-select-all-batteries').addEventListener('click', () => {
         document.querySelectorAll('.pc-batch-check[data-type="battery"]').forEach(cb => cb.checked = true);
+        _autoGenerate();
     });
     document.getElementById('pc-select-all-tools').addEventListener('click', () => {
         document.querySelectorAll('.pc-batch-check[data-type="tool"]').forEach(cb => cb.checked = true);
+        _autoGenerate();
     });
     document.getElementById('pc-select-none').addEventListener('click', () => {
         document.querySelectorAll('.pc-batch-check').forEach(cb => cb.checked = false);
+        _autoGenerate();
     });
+    // Individual batch checkbox toggles
+    document.getElementById('pc-batch-list').addEventListener('change', _autoGenerate);
 
-    // Generate
-    document.getElementById('pc-generate').addEventListener('click', async () => {
+    // Auto-generate: silently regenerates if there's something selected (no toast on empty)
+    async function _autoGenerate() {
+        await _generateLabels(true);
+    }
+
+    // Generate button (manual click — shows toast if nothing selected)
+    document.getElementById('pc-generate').addEventListener('click', () => _generateLabels(false));
+
+    // Core generate function
+    async function _generateLabels(silent) {
         const codeType = document.getElementById('pc-code-type').value;
         const mode = document.getElementById('pc-mode').value;
         const sizeKey = document.getElementById('pc-label-size').value;
@@ -181,13 +212,17 @@ UI.registerPage('print-codes', async (container) => {
             } else if (customText) {
                 items.push({ id: customText, label: customText });
             } else {
-                UI.toast('Select an asset or enter custom text', 'warning');
+                if (!silent) UI.toast('Select an asset or enter custom text', 'warning');
+                document.getElementById('pc-preview').style.display = 'none';
+                document.getElementById('pc-print').style.display = 'none';
                 return;
             }
         } else {
             const checked = document.querySelectorAll('.pc-batch-check:checked');
             if (checked.length === 0) {
-                UI.toast('Select at least one asset', 'warning');
+                if (!silent) UI.toast('Select at least one asset', 'warning');
+                document.getElementById('pc-preview').style.display = 'none';
+                document.getElementById('pc-print').style.display = 'none';
                 return;
             }
             checked.forEach(cb => {
@@ -242,7 +277,7 @@ UI.registerPage('print-codes', async (container) => {
 
         document.getElementById('pc-preview').style.display = 'block';
         document.getElementById('pc-print').style.display = 'inline-flex';
-    });
+    }
 
     // Print
     document.getElementById('pc-print').addEventListener('click', () => {
