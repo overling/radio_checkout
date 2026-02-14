@@ -279,18 +279,32 @@ UI.registerPage('print-codes', async (container) => {
         document.getElementById('pc-print').style.display = 'inline-flex';
     }
 
-    // Print — open a clean window with ONLY the labels (no browser headers/footers)
+    // Print — open a clean window with ONLY the labels
+    // Converts canvas elements to <img> so QR codes survive the copy
     document.getElementById('pc-print').addEventListener('click', () => {
-        const labelsHtml = document.getElementById('pc-labels').innerHTML;
-        if (!labelsHtml) return;
+        const labelsEl = document.getElementById('pc-labels');
+        if (!labelsEl || !labelsEl.children.length) return;
 
-        const printWin = window.open('', '_blank', 'width=600,height=500');
+        // Clone the labels and convert any <canvas> to <img> data URLs
+        const clone = labelsEl.cloneNode(true);
+        const origCanvases = labelsEl.querySelectorAll('canvas');
+        const cloneCanvases = clone.querySelectorAll('canvas');
+        for (let i = 0; i < origCanvases.length; i++) {
+            const img = document.createElement('img');
+            img.src = origCanvases[i].toDataURL('image/png');
+            img.style.width = origCanvases[i].style.width;
+            img.style.height = origCanvases[i].style.height;
+            img.style.display = 'block';
+            cloneCanvases[i].replaceWith(img);
+        }
+
+        const printWin = window.open('', '', 'width=600,height=500');
         if (!printWin) { UI.toast('Pop-up blocked — allow pop-ups to print labels', 'error'); return; }
 
         printWin.document.write(`<!DOCTYPE html>
-<html><head><title> </title>
+<html><head><title>\u00A0</title>
 <style>
-    @page { margin: 0; size: auto; }
+    @page { margin: 0; }
     html, body { margin: 0; padding: 0.1in; font-family: Arial, sans-serif; }
     .labels-grid { display: flex; flex-wrap: wrap; gap: 0.15in; }
     .label-preview {
@@ -302,8 +316,8 @@ UI.registerPage('print-codes', async (container) => {
     @media print { .no-print { display: none !important; } }
 </style>
 </head><body>
-    <div class="labels-grid">${labelsHtml}</div>
-    <div class="no-print">
+    <div class="labels-grid">${clone.innerHTML}</div>
+    <div class="no-print" style="margin-top:1rem;">
         <button onclick="window.print()" style="padding:0.5rem 1.5rem;font-size:1rem;cursor:pointer;">🖨️ Print</button>
         <button onclick="window.close()" style="padding:0.5rem 1rem;font-size:1rem;cursor:pointer;margin-left:0.5rem;">Close</button>
     </div>
