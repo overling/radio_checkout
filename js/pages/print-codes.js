@@ -23,6 +23,9 @@ UI.registerPage('print-codes', async (container) => {
         '0.5':  { label: '½″ tall',  height: 48, width: 2,   fontSize: 12 }
     };
 
+    const PRINT_PREVIEW_SETTING_KEY = 'printCodesUsePopupPreview';
+    const usePopupPreview = await DB.getSetting(PRINT_PREVIEW_SETTING_KEY, true);
+
     container.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem;">
             <h2 class="page-title" style="margin-bottom:0;">🏷️ Print Codes</h2>
@@ -104,6 +107,16 @@ UI.registerPage('print-codes', async (container) => {
             <div class="btn-group" style="margin-top:1rem;">
                 <button class="btn btn-primary" id="pc-generate">Generate</button>
                 <button class="btn btn-outline" id="pc-print" style="display:none;">🖨️ Print Labels</button>
+            </div>
+
+            <div class="form-group" style="margin-top:0.75rem;">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                    <input type="checkbox" id="pc-use-popup-preview" ${usePopupPreview ? 'checked' : ''}>
+                    Show extra print preview window before printing
+                </label>
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-top:0.25rem;">
+                    Turn this off to print directly using the browser print dialog from this page.
+                </div>
             </div>
         </div>
 
@@ -191,6 +204,11 @@ UI.registerPage('print-codes', async (container) => {
 
     // Generate button (manual click — shows toast if nothing selected)
     document.getElementById('pc-generate').addEventListener('click', () => _generateLabels(false));
+
+    // Persist print preview preference
+    document.getElementById('pc-use-popup-preview').addEventListener('change', async (e) => {
+        await DB.setSetting(PRINT_PREVIEW_SETTING_KEY, !!e.target.checked);
+    });
 
     // Core generate function
     async function _generateLabels(silent) {
@@ -284,6 +302,12 @@ UI.registerPage('print-codes', async (container) => {
     document.getElementById('pc-print').addEventListener('click', () => {
         const labelsEl = document.getElementById('pc-labels');
         if (!labelsEl || !labelsEl.children.length) return;
+
+        const shouldUsePopupPreview = document.getElementById('pc-use-popup-preview').checked;
+        if (!shouldUsePopupPreview) {
+            window.print();
+            return;
+        }
 
         // Clone the labels and convert any <canvas> to <img> data URLs
         const clone = labelsEl.cloneNode(true);
