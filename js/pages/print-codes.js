@@ -279,8 +279,36 @@ UI.registerPage('print-codes', async (container) => {
         document.getElementById('pc-print').style.display = 'inline-flex';
     }
 
-    // Print
+    // Print — open a clean window with ONLY the labels (no browser headers/footers)
     document.getElementById('pc-print').addEventListener('click', () => {
-        window.print();
+        const labelsHtml = document.getElementById('pc-labels').innerHTML;
+        if (!labelsHtml) return;
+
+        const printWin = window.open('', '_blank', 'width=600,height=500');
+        if (!printWin) { UI.toast('Pop-up blocked — allow pop-ups to print labels', 'error'); return; }
+
+        printWin.document.write(`<!DOCTYPE html>
+<html><head><title> </title>
+<style>
+    @page { margin: 0; size: auto; }
+    html, body { margin: 0; padding: 0.1in; font-family: Arial, sans-serif; }
+    .labels-grid { display: flex; flex-wrap: wrap; gap: 0.15in; }
+    .label-preview {
+        display: inline-flex; flex-direction: column; align-items: center;
+        padding: 0.05in; page-break-inside: avoid;
+    }
+    .label-text { font-weight: 700; color: #000; margin-top: 1px; }
+    .no-print { text-align: center; margin-top: 1rem; }
+    @media print { .no-print { display: none !important; } }
+</style>
+</head><body>
+    <div class="labels-grid">${labelsHtml}</div>
+    <div class="no-print">
+        <button onclick="window.print()" style="padding:0.5rem 1.5rem;font-size:1rem;cursor:pointer;">🖨️ Print</button>
+        <button onclick="window.close()" style="padding:0.5rem 1rem;font-size:1rem;cursor:pointer;margin-left:0.5rem;">Close</button>
+    </div>
+</body></html>`);
+        printWin.document.close();
+        setTimeout(() => printWin.print(), 300);
     });
 });
