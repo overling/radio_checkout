@@ -2,35 +2,39 @@
  * Asset Management Page - Add/Edit Radios, Batteries, Tools
  */
 
-// Print a single label — generate code in main window, then open print window with rendered image
+// Print a single label — generate code in main window, then open print window with ONLY the label
 async function _printSingleLabel(assetId, displayLabel, codeType) {
     let codeHtml = '';
+    let codeStyle = '';
 
     if (codeType === 'barcode') {
         // Render barcode to a temporary SVG in main window, then serialize
         const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         document.body.appendChild(tempSvg);
-        Scanner.generateBarcode(tempSvg, assetId);
+        Scanner.generateBarcode(tempSvg, assetId, { height: 24, width: 1.2, displayValue: false, margin: 2 });
         codeHtml = tempSvg.outerHTML;
         tempSvg.remove();
     } else {
-        // Render QR to a temporary canvas, convert to data URL
+        // Render QR to a temporary canvas at ½″ (48px at 96 DPI, 2× for sharpness)
         const tempCanvas = document.createElement('canvas');
-        await Scanner.generateQRToCanvas(tempCanvas, assetId, 180);
+        await Scanner.generateQRToCanvas(tempCanvas, assetId, 96);
         const dataUrl = tempCanvas.toDataURL('image/png');
-        codeHtml = `<img src="${dataUrl}" style="display:block;margin:0 auto;">`;
+        codeHtml = `<img src="${dataUrl}" style="display:block;margin:0 auto;width:48px;height:48px;">`;
     }
 
-    const printWin = window.open('', '_blank', 'width=400,height=400');
+    const printWin = window.open('', '_blank', 'width=300,height=300');
     if (!printWin) { UI.toast('Pop-up blocked — allow pop-ups to print', 'error'); return; }
 
     printWin.document.write(`<!DOCTYPE html>
         <html><head><title>Print Label: ${assetId}</title>
         <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 1rem; margin: 0; }
-            .label { display: inline-block; padding: 0.75rem; border: 2px dashed #ccc; border-radius: 8px; }
-            .label-text { font-size: 14px; font-weight: 700; margin-top: 0.5rem; }
-            @media print { .no-print { display: none !important; } .label { border: none; } }
+            body { font-family: Arial, sans-serif; text-align: center; padding: 0.25rem; margin: 0; }
+            .label { display: inline-block; padding: 0.15rem; }
+            .label-text { font-size: 7px; font-weight: 700; margin-top: 1px; }
+            @media print {
+                .no-print { display: none !important; }
+                body { padding: 0; margin: 0; }
+            }
         </style>
         </head><body>
         <div class="label">

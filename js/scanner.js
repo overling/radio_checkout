@@ -293,7 +293,7 @@ const Scanner = (() => {
     }
 
     // Generate Code 128 barcode to SVG element
-    function generateBarcode(svgElement, text) {
+    function generateBarcode(svgElement, text, opts = {}) {
         if (typeof JsBarcode === 'undefined') {
             console.warn('JsBarcode library not loaded');
             return;
@@ -301,11 +301,11 @@ const Scanner = (() => {
         try {
             JsBarcode(svgElement, text, {
                 format: 'CODE128',
-                width: 2,
-                height: 50,
-                displayValue: true,
-                fontSize: 12,
-                margin: 5
+                width: opts.width || 2,
+                height: opts.height || 50,
+                displayValue: opts.displayValue !== undefined ? opts.displayValue : true,
+                fontSize: opts.fontSize || 12,
+                margin: opts.margin !== undefined ? opts.margin : 5
             });
         } catch (e) {
             console.error('Barcode generation error:', e);

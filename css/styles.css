@@ -1421,8 +1421,29 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* ===== PRINT STYLES ===== */
 @media print {
-    #app-header, #main-nav, .btn, .filter-bar, .no-print { display: none !important; }
-    #app-content { max-width: 100%; padding: 0; }
-    .card { box-shadow: none; border: 1px solid #ccc; }
-    .label-preview { break-inside: avoid; }
+    /* Hide everything except labels */
+    #app-header, #main-nav, .btn, .btn-group, .filter-bar, .no-print,
+    .page-title, .card-header, h2, h3 { display: none !important; }
+    body { margin: 0; padding: 0; }
+    #app-content { max-width: 100%; padding: 0; margin: 0; }
+    .card { box-shadow: none; border: none; padding: 0; margin: 0; }
+
+    /* Label print layout — compact, no decorations */
+    .labels-grid { gap: 0.15in; padding: 0; justify-content: flex-start; }
+    .label-preview {
+        break-inside: avoid;
+        border: none !important;
+        background: none !important;
+        padding: 0.05in !important;
+        margin: 0;
+    }
+    .label-preview canvas,
+    .label-preview svg,
+    .label-preview img {
+        max-width: none !important;
+    }
+    .label-text {
+        margin-top: 1px !important;
+        color: #000 !important;
+    }
 }

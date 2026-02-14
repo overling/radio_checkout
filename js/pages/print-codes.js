@@ -11,13 +11,25 @@ UI.registerPage('print-codes', async (container) => {
         ...tools.map(t => ({ ...t, assetType: 'tool', displayName: `Tool: ${t.id}` }))
     ];
 
+    // Size presets (in inches → pixels at 96 DPI)
+    const QR_SIZES = {
+        '0.5':  { label: '½″ × ½″',   px: 48 },
+        '0.75': { label: '¾″ × ¾″',   px: 72 },
+        '1':    { label: '1″ × 1″',    px: 96 }
+    };
+    const BC_SIZES = {
+        '0.25': { label: '¼″ tall',  height: 24, width: 1.2, fontSize: 8 },
+        '0.375':{ label: '⅜″ tall',  height: 36, width: 1.5, fontSize: 10 },
+        '0.5':  { label: '½″ tall',  height: 48, width: 2,   fontSize: 12 }
+    };
+
     container.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem;">
             <h2 class="page-title" style="margin-bottom:0;">🏷️ Print Codes</h2>
             <button class="btn btn-outline" id="goto-assets-from-print">📦 Manage Assets</button>
         </div>
 
-        <div class="card">
+        <div class="card no-print">
             <div class="card-header">
                 <h3>Generate Labels</h3>
             </div>
@@ -35,6 +47,14 @@ UI.registerPage('print-codes', async (container) => {
                     <select id="pc-mode">
                         <option value="single">Single Label</option>
                         <option value="batch">Batch (All Selected)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="pc-label-size">Label Size</label>
+                    <select id="pc-label-size">
+                        <option value="0.5" selected>½″ × ½″ (default)</option>
+                        <option value="0.75">¾″ × ¾″</option>
+                        <option value="1">1″ × 1″</option>
                     </select>
                 </div>
             </div>
@@ -88,15 +108,38 @@ UI.registerPage('print-codes', async (container) => {
         </div>
 
         <div id="pc-preview" class="card" style="display:none;">
-            <div class="card-header">
+            <div class="card-header no-print">
                 <h3>Label Preview</h3>
             </div>
             <div id="pc-labels" class="labels-grid"></div>
         </div>
     `;
 
+    // Update size dropdown options when code type changes
+    function _updateSizeOptions() {
+        const codeType = document.getElementById('pc-code-type').value;
+        const sizeSelect = document.getElementById('pc-label-size');
+        sizeSelect.innerHTML = '';
+        if (codeType === 'qr') {
+            sizeSelect.innerHTML = `
+                <option value="0.5" selected>½″ × ½″ (default)</option>
+                <option value="0.75">¾″ × ¾″</option>
+                <option value="1">1″ × 1″</option>
+            `;
+        } else {
+            sizeSelect.innerHTML = `
+                <option value="0.25" selected>¼″ tall (default)</option>
+                <option value="0.375">⅜″ tall</option>
+                <option value="0.5">½″ tall</option>
+            `;
+        }
+    }
+
     // Navigation shortcut
     document.getElementById('goto-assets-from-print').addEventListener('click', () => UI.navigateTo('assets'));
+
+    // Code type change — update size options
+    document.getElementById('pc-code-type').addEventListener('change', _updateSizeOptions);
 
     // Mode toggle
     document.getElementById('pc-mode').addEventListener('change', (e) => {
@@ -122,6 +165,7 @@ UI.registerPage('print-codes', async (container) => {
     document.getElementById('pc-generate').addEventListener('click', async () => {
         const codeType = document.getElementById('pc-code-type').value;
         const mode = document.getElementById('pc-mode').value;
+        const sizeKey = document.getElementById('pc-label-size').value;
         const labelsContainer = document.getElementById('pc-labels');
         labelsContainer.innerHTML = '';
 
@@ -152,27 +196,47 @@ UI.registerPage('print-codes', async (container) => {
             });
         }
 
-        // Generate labels
+        // Generate labels at the selected size
         for (const item of items) {
             const labelDiv = document.createElement('div');
             labelDiv.className = 'label-preview';
 
             if (codeType === 'qr') {
+                const sz = QR_SIZES[sizeKey] || QR_SIZES['0.5'];
                 const canvas = document.createElement('canvas');
-                await Scanner.generateQRToCanvas(canvas, item.id, 160);
+                // Generate at 2× for sharpness, display at target size
+                await Scanner.generateQRToCanvas(canvas, item.id, sz.px * 2);
+                canvas.style.width = sz.px + 'px';
+                canvas.style.height = sz.px + 'px';
                 labelDiv.appendChild(canvas);
+                // Scale label text with size
+                const textEl = document.createElement('div');
+                textEl.className = 'label-text';
+                textEl.style.fontSize = (sz.px <= 48 ? 7 : sz.px <= 72 ? 9 : 11) + 'px';
+                textEl.textContent = item.label;
+                labelDiv.appendChild(textEl);
             } else {
+                const sz = BC_SIZES[sizeKey] || BC_SIZES['0.25'];
                 const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 svg.setAttribute('class', 'barcode-svg');
                 labelDiv.appendChild(svg);
-                Scanner.generateBarcode(svg, item.id);
+                Scanner.generateBarcode(svg, item.id, {
+                    height: sz.height,
+                    width: sz.width,
+                    fontSize: sz.fontSize,
+                    displayValue: false,
+                    margin: 2
+                });
+                const textEl = document.createElement('div');
+                textEl.className = 'label-text';
+                textEl.style.fontSize = sz.fontSize + 'px';
+                textEl.textContent = item.label;
+                labelDiv.appendChild(textEl);
             }
 
-            const textEl = document.createElement('div');
-            textEl.className = 'label-text';
-            textEl.textContent = item.label;
-            labelDiv.appendChild(textEl);
-
+            // Compact padding for print
+            labelDiv.style.padding = '0.25rem';
+            labelDiv.style.minWidth = 'auto';
             labelsContainer.appendChild(labelDiv);
         }
 
