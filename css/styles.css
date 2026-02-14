@@ -1091,30 +1091,30 @@ tbody tr:last-child td { border-bottom: none; }
 .fleet-retired .fleet-status { color: var(--gray-500); }
 .fleet-retired .fleet-label { color: var(--text); }
 
-/* Dark mode fleet card text — force bright white/colored text for readability */
+/* Dark mode fleet card text — force bright text for readability */
 [data-theme="dark"] .fleet-card .fleet-label,
 [data-theme="high-contrast"] .fleet-card .fleet-label,
 [data-theme="midnight"] .fleet-card .fleet-label,
 [data-theme="usps-dark"] .fleet-card .fleet-label {
-    color: #fff;
+    color: #ffffff !important;
 }
 [data-theme="dark"] .fleet-card .fleet-status,
 [data-theme="high-contrast"] .fleet-card .fleet-status,
 [data-theme="midnight"] .fleet-card .fleet-status,
 [data-theme="usps-dark"] .fleet-card .fleet-status {
-    color: #bbb;
+    color: #cccccc !important;
 }
 [data-theme="dark"] .fleet-card .fleet-assignee,
 [data-theme="high-contrast"] .fleet-card .fleet-assignee,
 [data-theme="midnight"] .fleet-card .fleet-assignee,
 [data-theme="usps-dark"] .fleet-card .fleet-assignee {
-    color: var(--warning);
+    color: var(--warning) !important;
 }
 [data-theme="dark"] .fleet-overdue .fleet-label,
 [data-theme="high-contrast"] .fleet-overdue .fleet-label,
 [data-theme="midnight"] .fleet-overdue .fleet-label,
 [data-theme="usps-dark"] .fleet-overdue .fleet-label {
-    color: var(--danger);
+    color: var(--danger) !important;
 }
 
 /* Fleet tooltip */
@@ -1124,7 +1124,7 @@ tbody tr:last-child td { border-bottom: none; }
     bottom: calc(100% + 6px);
     left: 50%;
     transform: translateX(-50%);
-    background: var(--gray-900);
+    background: #222;
     color: #fff;
     padding: 0.5rem 0.65rem;
     border-radius: 6px;
@@ -1142,7 +1142,7 @@ tbody tr:last-child td { border-bottom: none; }
     left: 50%;
     transform: translateX(-50%);
     border: 5px solid transparent;
-    border-top-color: var(--gray-900);
+    border-top-color: #222;
 }
 .fleet-card:hover .fleet-tooltip {
     display: block;
