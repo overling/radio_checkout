@@ -1420,11 +1420,15 @@ tbody tr:last-child td { border-bottom: none; }
 .help-toc-link:hover { background: var(--primary-light); }
 
 /* ===== PRINT STYLES ===== */
+@page {
+    margin: 0;
+    size: auto;
+}
 @media print {
     /* Hide everything except labels */
     #app-header, #main-nav, .btn, .btn-group, .filter-bar, .no-print,
     .page-title, .card-header, h2, h3 { display: none !important; }
-    body { margin: 0; padding: 0; }
+    html, body { margin: 0; padding: 0.1in; width: 100%; height: auto; }
     #app-content { max-width: 100%; padding: 0; margin: 0; }
     .card { box-shadow: none; border: none; padding: 0; margin: 0; }
 
