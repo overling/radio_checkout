@@ -1222,17 +1222,45 @@ UI.registerPage('test-harness', async (container) => {
 
     // ===== Button handlers =====
     document.getElementById('th-run-full').addEventListener('click', async () => {
-        if (!confirm('This will DELETE all existing data and generate a full week of demo data. Continue?')) return;
-        logEl.innerHTML = '';
-        reportCard.style.display = 'none';
-        document.getElementById('th-run-full').disabled = true;
-        try {
-            await runFullSimulation();
-        } catch (e) {
-            log(`FATAL ERROR: ${e.message}`, 'error');
-            console.error(e);
-        }
-        document.getElementById('th-run-full').disabled = false;
+        UI.showModal('⚠️ Run Full Week Simulation', `
+            <div style="text-align:center;">
+                <p style="color:var(--danger);font-weight:700;font-size:1.1rem;margin-bottom:0.5rem;">
+                    This will DELETE all existing data and replace it with demo data.
+                </p>
+                <p style="color:var(--text-secondary);margin-bottom:0.75rem;">
+                    All radios, batteries, technicians, transactions, settings, and audit logs will be erased.<br>
+                    <strong>This cannot be undone.</strong>
+                </p>
+                <p style="margin-bottom:0.5rem;font-size:0.85rem;">Type <strong style="color:var(--danger);">DELETE</strong> to confirm:</p>
+                <input type="text" id="th-full-confirm" placeholder="Type DELETE here" autocomplete="off"
+                    style="width:100%;max-width:260px;padding:0.6rem;border:2px solid var(--danger);border-radius:var(--radius);font-size:1rem;text-align:center;background:var(--input-bg);color:var(--text);">
+            </div>
+        `, `
+            <button class="btn btn-outline" id="th-full-cancel">Cancel</button>
+            <button class="btn btn-danger" id="th-full-go" disabled>🗑️ Run Full Week</button>
+        `);
+
+        const inp = document.getElementById('th-full-confirm');
+        const goBtn = document.getElementById('th-full-go');
+        document.getElementById('th-full-cancel').addEventListener('click', () => UI.closeModal());
+        inp.addEventListener('input', () => { goBtn.disabled = inp.value.trim() !== 'DELETE'; });
+
+        goBtn.addEventListener('click', async () => {
+            if (inp.value.trim() !== 'DELETE') return;
+            UI.closeModal();
+            logEl.innerHTML = '';
+            reportCard.style.display = 'none';
+            document.getElementById('th-run-full').disabled = true;
+            try {
+                await runFullSimulation();
+            } catch (e) {
+                log(`FATAL ERROR: ${e.message}`, 'error');
+                console.error(e);
+            }
+            document.getElementById('th-run-full').disabled = false;
+        });
+
+        setTimeout(() => inp.focus(), 100);
     });
 
     document.getElementById('th-run-tests-only').addEventListener('click', async () => {
