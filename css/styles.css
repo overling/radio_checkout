@@ -1029,7 +1029,7 @@ tbody tr:last-child td { border-bottom: none; }
     margin-bottom: 0.05rem;
 }
 .fleet-label {
-    font-size: 0.5rem;
+    font-size: 0.6rem;
     font-weight: 700;
     color: var(--text);
     white-space: nowrap;
@@ -1038,7 +1038,7 @@ tbody tr:last-child td { border-bottom: none; }
     line-height: 1.15;
 }
 .fleet-assignee {
-    font-size: 0.45rem;
+    font-size: 0.5rem;
     color: var(--warning);
     font-weight: 600;
     white-space: nowrap;
@@ -1047,7 +1047,7 @@ tbody tr:last-child td { border-bottom: none; }
     line-height: 1.15;
 }
 .fleet-status {
-    font-size: 0.4rem;
+    font-size: 0.45rem;
     text-transform: uppercase;
     letter-spacing: 0.2px;
     font-weight: 600;
@@ -1091,18 +1091,18 @@ tbody tr:last-child td { border-bottom: none; }
 .fleet-retired .fleet-status { color: var(--gray-500); }
 .fleet-retired .fleet-label { color: var(--text); }
 
-/* Dark mode fleet card text — ensure labels stay readable on dark status backgrounds */
+/* Dark mode fleet card text — force bright white/colored text for readability */
 [data-theme="dark"] .fleet-card .fleet-label,
 [data-theme="high-contrast"] .fleet-card .fleet-label,
 [data-theme="midnight"] .fleet-card .fleet-label,
 [data-theme="usps-dark"] .fleet-card .fleet-label {
-    color: var(--text);
+    color: #fff;
 }
 [data-theme="dark"] .fleet-card .fleet-status,
 [data-theme="high-contrast"] .fleet-card .fleet-status,
 [data-theme="midnight"] .fleet-card .fleet-status,
 [data-theme="usps-dark"] .fleet-card .fleet-status {
-    color: var(--text-muted);
+    color: #bbb;
 }
 [data-theme="dark"] .fleet-card .fleet-assignee,
 [data-theme="high-contrast"] .fleet-card .fleet-assignee,
