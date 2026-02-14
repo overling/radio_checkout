@@ -1236,22 +1236,56 @@ UI.registerPage('test-harness', async (container) => {
     });
 
     document.getElementById('th-run-tests-only').addEventListener('click', async () => {
-        // Check if data exists first
         const radioCount = await DB.count('radios');
-        if (radioCount === 0) {
-            if (!confirm('⚠️ Database is EMPTY — no radios, technicians, or transactions.\n\nMost tests will fail because there is nothing to test.\n\nRun the Full Week Simulation first to populate data, or click OK to run tests anyway.')) return;
-        }
-        logEl.innerHTML = '';
-        reportCard.style.display = 'none';
-        progressEl.style.display = 'none';
-        document.getElementById('th-run-tests-only').disabled = true;
-        try {
-            await runVerificationTests();
-        } catch (e) {
-            log(`FATAL ERROR: ${e.message}`, 'error');
-            console.error(e);
-        }
-        document.getElementById('th-run-tests-only').disabled = false;
+        const emptyDbWarning = radioCount === 0
+            ? `
+                <p style="color:var(--warning);font-weight:700;margin-bottom:0.75rem;">
+                    ⚠️ Database appears empty. Most tests may fail until demo data is generated.
+                </p>
+            `
+            : '';
+
+        UI.showModal('⚠️ Run Verification Tests', `
+            <div style="text-align:center;">
+                <p style="color:var(--danger);font-weight:700;font-size:1.1rem;margin-bottom:0.5rem;">
+                    Running tests WILL modify your current database.
+                </p>
+                <p style="color:var(--text-secondary);margin-bottom:0.75rem;">
+                    Tests create and update technicians, transactions, and asset statuses as part of validation.<br>
+                    <strong>Run this only if you are okay with temporary data changes.</strong>
+                </p>
+                ${emptyDbWarning}
+                <p style="margin-bottom:0.5rem;font-size:0.85rem;">Type <strong style="color:var(--danger);">RUN TESTS</strong> to continue:</p>
+                <input type="text" id="th-tests-confirm" placeholder="Type RUN TESTS here" autocomplete="off"
+                    style="width:100%;max-width:260px;padding:0.6rem;border:2px solid var(--danger);border-radius:var(--radius);font-size:1rem;text-align:center;background:var(--input-bg);color:var(--text);">
+            </div>
+        `, `
+            <button class="btn btn-outline" id="th-tests-cancel">Cancel</button>
+            <button class="btn btn-danger" id="th-tests-go" disabled>🧪 Run Tests</button>
+        `);
+
+        const inp = document.getElementById('th-tests-confirm');
+        const goBtn = document.getElementById('th-tests-go');
+        document.getElementById('th-tests-cancel').addEventListener('click', () => UI.closeModal());
+        inp.addEventListener('input', () => { goBtn.disabled = inp.value.trim().toUpperCase() !== 'RUN TESTS'; });
+
+        goBtn.addEventListener('click', async () => {
+            if (inp.value.trim().toUpperCase() !== 'RUN TESTS') return;
+            UI.closeModal();
+            logEl.innerHTML = '';
+            reportCard.style.display = 'none';
+            progressEl.style.display = 'none';
+            document.getElementById('th-run-tests-only').disabled = true;
+            try {
+                await runVerificationTests();
+            } catch (e) {
+                log(`FATAL ERROR: ${e.message}`, 'error');
+                console.error(e);
+            }
+            document.getElementById('th-run-tests-only').disabled = false;
+        });
+
+        setTimeout(() => inp.focus(), 100);
     });
 
     document.getElementById('th-clear').addEventListener('click', async () => {
