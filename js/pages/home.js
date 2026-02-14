@@ -33,7 +33,7 @@ UI.registerPage('home', async (container) => {
                 Supervisor Dashboard
             </button>
             <button class="home-btn" data-nav="print-codes">
-                <span class="icon">🏷️</span>
+                <span class="icon">🖨️</span>
                 Print Codes
             </button>
             <button class="home-btn" data-nav="export">

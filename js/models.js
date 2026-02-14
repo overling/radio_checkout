@@ -156,6 +156,7 @@ const Models = (() => {
         for (const checkout of activeCheckouts) {
             const hasReturn = allTransactions.some(t =>
                 t.assetId === checkout.assetId &&
+                t.technicianId === checkout.technicianId &&
                 t.type === 'return' &&
                 new Date(t.timestamp) > new Date(checkout.timestamp)
             );
