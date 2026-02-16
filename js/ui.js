@@ -10,17 +10,74 @@ const UI = (() => {
         'header-save-btn': 'Save a database snapshot and enable auto-save for this session',
         'header-info-btn': 'Open app info, manual, and emergency restore tools',
         'reconnect-btn': 'Reconnect backup folders so automatic saving can continue',
+        'modal-close': 'Close this dialog window',
+        'scanner-close': 'Close camera scanner',
+
+        'goto-assets-from-print': 'Open Assets & Technicians to manage radios, batteries, tools, and technician badges',
+
+        'export-xlsx-btn': 'Export all database records to one Excel workbook with sheets for Radios, Batteries, Tools, Technicians, Transactions, and Audit Log',
+        'import-xlsx-btn': 'Import an Excel workbook and merge/update records by ID across Radios, Batteries, Tools, Technicians, Transactions, and Audit Log',
+        'export-json-btn': 'Export a full JSON backup of every database table for archival or transfer',
+        'import-json-btn': 'Import a JSON backup and merge/update records by ID in the current database',
+        'clear-data-btn': 'Delete all radios, batteries, tools, technicians, transactions, settings, and logs from this database',
+        'ab-save-btn': 'Save automatic backup schedule times used for background backups',
+        'ab-backup-now-btn': 'Run an immediate backup now using the current backup settings',
+        'ab-add-time': 'Add another scheduled daily backup time',
+
         'add-tech-btn': 'Create a new technician badge record',
         'import-techs-btn': 'Import technician records from an Excel spreadsheet',
-        'export-techs-all-btn': 'Export all technician records to an Excel file',
-        'export-techs-filtered-btn': 'Export only technician records matching the current search',
+        'export-techs-all-btn': 'Export every technician record (Badge ID, first/last name, department, timestamps) to Excel',
+        'export-techs-filtered-btn': 'Export only technicians currently matching the search filter to Excel',
+
+        'sv-save-hours': 'Save the overdue threshold in hours used to flag late radio returns',
+        'sv-email-add': 'Add this email contact to overdue alert recipients',
+        'sv-email-save-msg': 'Save the overdue alert message template used in outgoing emails',
+        'sv-email-send': 'Send overdue alert email now to all enabled contacts for currently overdue radios',
+        'sv-sync-choose': 'Pick the folder used for sync/backup writes and reconnect permissions for this browser session',
+        'sv-sync-push': 'Write the current database to the connected sync folder now',
+        'sv-sync-pull': 'Load the newest backup file from the sync folder and merge it into this database',
+        'sv-sync-disable': 'Disable folder sync and stop automatic sync timer (backup files remain on disk)',
+        'sv-prefix-add': 'Add a scanner prefix rule that maps a code prefix to an asset category/label',
+        'sv-prefix-reset': 'Restore scanner prefix rules back to factory defaults',
+        'sv-regen-manifest': 'Rebuild and save trusted file-integrity hashes after approved code updates',
+        'sv-verify-files': 'Run a file-integrity scan now and report modified/missing files',
+        'sv-pw-change': 'Set or change the supervisor dashboard password',
+        'sv-pw-remove': 'Remove supervisor password protection from this dashboard',
+
+        'co-radio-camera': 'Open camera scanner to capture a radio barcode/QR code for checkout',
+        'co-tech-camera': 'Open camera scanner to capture a technician badge for checkout',
+
+        'ret-radio-camera': 'Open camera scanner to capture a radio barcode/QR code for return',
+
+        'cs-camera-toggle': 'Turn continuous camera scanning on/off for Clerk Station input',
+        'cs-clear-log': 'Clear the Clerk Station activity log panel',
+
+        'qs-mode-btn': 'Switch Quick Scan mode between AUTO, CHECK OUT, and CHECK IN',
+        'qs-camera-toggle': 'Turn self-service camera scanning on/off for Quick Scan',
+        'qs-clear-log': 'Clear the Quick Scan activity log panel',
+
+        'pc-select-all-radios': 'Select all radio assets for batch label generation',
+        'pc-select-all-batteries': 'Select all battery assets for batch label generation',
+        'pc-select-all-tools': 'Select all tool assets for batch label generation',
+        'pc-select-none': 'Clear all selected assets in the batch print list',
         'ptn-save-btn': 'Save this technician name to the scanned badge record',
         'ptn-skip-btn': 'Skip naming for now and continue',
+
         'th-run-full': 'Reset data, generate a full demo week, and run all tests',
         'th-run-tests-only': 'Run verification tests on current data (can modify records)',
         'th-clear': 'Permanently delete all stored data',
+        'th-full-cancel': 'Cancel running the full-week simulation',
+        'th-full-go': 'Run full-week simulation after DELETE confirmation',
+        'th-tests-cancel': 'Cancel running verification tests',
+        'th-tests-go': 'Run verification tests after RUN TESTS confirmation',
+        'th-clear-cancel': 'Cancel clear-all-data operation',
+        'th-clear-go': 'Permanently clear all data after DELETE confirmation',
+
         'pc-generate': 'Generate labels using the selected options',
-        'pc-print': 'Print the currently generated labels'
+        'pc-print': 'Print the currently generated labels',
+
+        'help-open-manual-btn': 'Open the full instruction manual page',
+        'help-open-quickstart-btn': 'Open the quick-start checklist for first-time setup'
     };
 
     const TOOLTIP_BY_TEXT = {
@@ -34,11 +91,19 @@ const UI = (() => {
         'add': 'Add a new record',
         'export all': 'Export all records to an Excel file',
         'export filtered': 'Export only records matching the current search',
-        'export to excel': 'Export records to an Excel spreadsheet',
-        'import from excel': 'Import records from an Excel spreadsheet',
+        'export to excel': 'Export data to an Excel file (records included depend on this page)',
+        'import from excel': 'Import data from an Excel file into the current database',
         'save now': 'Save a backup immediately',
         'choose folder': 'Choose the folder used for backup and sync',
         'load from folder': 'Load and merge data from the selected backup folder',
+        'backup now': 'Run an immediate backup now',
+        'export json backup': 'Export a full JSON backup of all database tables',
+        'import json backup': 'Import a JSON backup and merge/update matching records',
+        'run full week simulation + tests': 'Delete current data, generate a full demo week, then run all verification tests',
+        'run tests only no data reset': 'Run verification tests against current data without clearing tables (tests can still modify records)',
+        'clear all data': 'Permanently delete all stored data tables from this database',
+        'send overdue alert': 'Send overdue radio alerts to enabled email contacts right now',
+        'generate': 'Generate preview labels using current code type, size, and selected assets',
         'print labels': 'Print the generated labels',
         'open instruction manual': 'Open the built-in instruction manual'
     };
