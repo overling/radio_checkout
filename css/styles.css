@@ -736,17 +736,35 @@ tbody tr:last-child td { border-bottom: none; }
 .toast {
     padding: 0.75rem 1.25rem;
     border-radius: var(--radius);
-    color: white;
+    color: var(--text);
     font-weight: 500;
     font-size: 0.9rem;
     box-shadow: var(--shadow-lg);
     animation: slideIn 0.3s ease;
     max-width: 400px;
+    border: 1px solid var(--border);
+    background: var(--surface);
 }
-.toast.success { background: var(--success); }
-.toast.error { background: var(--danger); }
-.toast.warning { background: var(--warning); }
-.toast.info { background: var(--info); }
+.toast.success {
+    background: var(--success-light);
+    color: var(--success);
+    border-color: var(--success);
+}
+.toast.error {
+    background: var(--danger-light);
+    color: var(--danger);
+    border-color: var(--danger);
+}
+.toast.warning {
+    background: var(--warning-light);
+    color: var(--warning);
+    border-color: var(--warning);
+}
+.toast.info {
+    background: var(--info-light);
+    color: var(--info);
+    border-color: var(--info);
+}
 @keyframes slideIn {
     from { transform: translateX(100%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }

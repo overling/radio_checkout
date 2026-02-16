@@ -884,7 +884,8 @@ async function renderTechniciansTab() {
         <div class="filter-bar">
             <input type="text" id="tech-search" placeholder="Search technicians...">
             <button class="btn btn-outline" id="import-techs-btn">📥 Import from Excel</button>
-            <button class="btn btn-outline" id="export-techs-btn">📤 Export to Excel</button>
+            <button class="btn btn-outline" id="export-techs-all-btn">📤 Export All</button>
+            <button class="btn btn-outline" id="export-techs-filtered-btn">📤 Export Filtered</button>
             <button class="btn btn-primary" id="add-tech-btn">+ Add Technician</button>
         </div>
         <div class="table-wrapper">
@@ -982,21 +983,18 @@ async function renderTechniciansTab() {
         renderRows(e.target.value.toLowerCase());
     }));
 
-    document.getElementById('export-techs-btn').addEventListener('click', () => {
+    function exportTechniciansToExcel(rowsToExport, filenamePrefix) {
         if (typeof XLSX === 'undefined') {
             UI.toast('SheetJS library not loaded. Check internet connection.', 'error');
             return;
         }
 
-        const filter = (document.getElementById('tech-search').value || '').trim().toLowerCase();
-        const filtered = getFilteredTechnicians(filter);
-
-        if (filtered.length === 0) {
+        if (!rowsToExport || rowsToExport.length === 0) {
             UI.toast('No technicians to export', 'warning');
             return;
         }
 
-        const rows = filtered.map(t => ({
+        const rows = rowsToExport.map(t => ({
             'Badge ID': t.badgeId,
             'First Name': t.firstName || '',
             'Last Name': t.lastName || '',
@@ -1020,9 +1018,25 @@ async function renderTechniciansTab() {
         XLSX.utils.book_append_sheet(wb, ws, 'Technicians');
 
         const today = new Date().toISOString().split('T')[0];
-        const filename = `technicians_${today}.xlsx`;
+        const filename = `${filenamePrefix}_${today}.xlsx`;
         XLSX.writeFile(wb, filename);
-        UI.toast(`Exported ${filtered.length} technician${filtered.length === 1 ? '' : 's'} to ${filename}`, 'success');
+        UI.toast(`Exported ${rowsToExport.length} technician${rowsToExport.length === 1 ? '' : 's'} to ${filename}`, 'success');
+    }
+
+    document.getElementById('export-techs-all-btn').addEventListener('click', () => {
+        exportTechniciansToExcel(technicians, 'technicians_all');
+    });
+
+    document.getElementById('export-techs-filtered-btn').addEventListener('click', () => {
+        const filter = (document.getElementById('tech-search').value || '').trim().toLowerCase();
+        const filtered = getFilteredTechnicians(filter);
+
+        if (filtered.length === 0) {
+            UI.toast('No technicians match the current search filter', 'warning');
+            return;
+        }
+
+        exportTechniciansToExcel(filtered, 'technicians_filtered');
     });
 
     document.getElementById('add-tech-btn').addEventListener('click', () => {
