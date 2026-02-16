@@ -4,6 +4,7 @@
 const UI = (() => {
     const pages = {};
     let currentPage = 'home';
+    let tooltipObserver = null;
 
     function registerPage(name, renderFn) {
         pages[name] = renderFn;
@@ -19,7 +20,9 @@ const UI = (() => {
         const content = document.getElementById('app-content');
         if (pages[pageName]) {
             content.innerHTML = '';
-            pages[pageName](content);
+            Promise.resolve(pages[pageName](content)).finally(() => {
+                applyButtonTooltips(content);
+            });
         }
     }
 
@@ -27,6 +30,72 @@ const UI = (() => {
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', () => navigateTo(btn.dataset.page));
         });
+        initButtonTooltips();
+    }
+
+    function _normalizeTooltipText(text) {
+        return String(text || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function _tooltipFromId(id) {
+        const clean = _normalizeTooltipText(id);
+        if (!clean) return '';
+        return clean
+            .replace(/[-_]+/g, ' ')
+            .replace(/\b\w/g, (m) => m.toUpperCase());
+    }
+
+    function _deriveButtonTooltip(button) {
+        const ariaLabel = _normalizeTooltipText(button.getAttribute('aria-label'));
+        if (ariaLabel) return ariaLabel;
+
+        const dataTooltip = _normalizeTooltipText(button.dataset.tooltip);
+        if (dataTooltip) return dataTooltip;
+
+        const text = _normalizeTooltipText(button.textContent);
+        if (text === '×' || text === '✕') return 'Close';
+        if (text) return text;
+
+        const fromId = _tooltipFromId(button.id);
+        if (fromId) return fromId;
+
+        return 'Button';
+    }
+
+    function applyButtonTooltips(root = document) {
+        if (!root) return;
+
+        const buttons = [];
+        if (root.nodeType === 1 && root.matches('button')) {
+            buttons.push(root);
+        }
+        if (root.querySelectorAll) {
+            root.querySelectorAll('button').forEach(btn => buttons.push(btn));
+        }
+
+        buttons.forEach((button) => {
+            const existingTitle = _normalizeTooltipText(button.getAttribute('title'));
+            if (existingTitle) return;
+            button.setAttribute('title', _deriveButtonTooltip(button));
+        });
+    }
+
+    function initButtonTooltips() {
+        applyButtonTooltips(document);
+
+        if (tooltipObserver || typeof MutationObserver === 'undefined') return;
+
+        tooltipObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (node && node.nodeType === 1) {
+                        applyButtonTooltips(node);
+                    }
+                });
+            });
+        });
+
+        tooltipObserver.observe(document.body, { childList: true, subtree: true });
     }
 
     // Clock
@@ -88,6 +157,7 @@ const UI = (() => {
         document.getElementById('modal-body').innerHTML = bodyHtml;
         document.getElementById('modal-footer').innerHTML = footerHtml;
         document.getElementById('modal-overlay').classList.remove('hidden');
+        applyButtonTooltips(document.getElementById('modal-container'));
     }
 
     function closeModal() {
