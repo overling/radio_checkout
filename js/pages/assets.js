@@ -884,6 +884,7 @@ async function renderTechniciansTab() {
         <div class="filter-bar">
             <input type="text" id="tech-search" placeholder="Search technicians...">
             <button class="btn btn-outline" id="import-techs-btn">📥 Import from Excel</button>
+            <button class="btn btn-outline" id="export-techs-btn">📤 Export to Excel</button>
             <button class="btn btn-primary" id="add-tech-btn">+ Add Technician</button>
         </div>
         <div class="table-wrapper">
@@ -903,8 +904,8 @@ async function renderTechniciansTab() {
         </div>
     `;
 
-    function renderRows(filter = '') {
-        const filtered = technicians.filter(t => {
+    function getFilteredTechnicians(filter = '') {
+        return technicians.filter(t => {
             return !filter ||
                 t.badgeId.toLowerCase().includes(filter) ||
                 (t.name || '').toLowerCase().includes(filter) ||
@@ -912,6 +913,10 @@ async function renderTechniciansTab() {
                 (t.lastName || '').toLowerCase().includes(filter) ||
                 (t.department || '').toLowerCase().includes(filter);
         });
+    }
+
+    function renderRows(filter = '') {
+        const filtered = getFilteredTechnicians(filter);
 
         document.getElementById('techs-tbody').innerHTML = filtered.length === 0
             ? '<tr><td colspan="6" class="empty-state">No technicians found</td></tr>'
@@ -976,6 +981,49 @@ async function renderTechniciansTab() {
     document.getElementById('tech-search').addEventListener('input', UI.debounce((e) => {
         renderRows(e.target.value.toLowerCase());
     }));
+
+    document.getElementById('export-techs-btn').addEventListener('click', () => {
+        if (typeof XLSX === 'undefined') {
+            UI.toast('SheetJS library not loaded. Check internet connection.', 'error');
+            return;
+        }
+
+        const filter = (document.getElementById('tech-search').value || '').trim().toLowerCase();
+        const filtered = getFilteredTechnicians(filter);
+
+        if (filtered.length === 0) {
+            UI.toast('No technicians to export', 'warning');
+            return;
+        }
+
+        const rows = filtered.map(t => ({
+            'Badge ID': t.badgeId,
+            'First Name': t.firstName || '',
+            'Last Name': t.lastName || '',
+            'Name': t.name || `${t.firstName || ''} ${t.lastName || ''}`.trim(),
+            'Department': t.department || '',
+            'Added': t.createdAt ? new Date(t.createdAt).toLocaleString() : '',
+            'Updated': t.updatedAt ? new Date(t.updatedAt).toLocaleString() : ''
+        }));
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws['!cols'] = [
+            { wch: 16 }, // Badge ID
+            { wch: 16 }, // First Name
+            { wch: 16 }, // Last Name
+            { wch: 24 }, // Name
+            { wch: 20 }, // Department
+            { wch: 22 }, // Added
+            { wch: 22 }  // Updated
+        ];
+        XLSX.utils.book_append_sheet(wb, ws, 'Technicians');
+
+        const today = new Date().toISOString().split('T')[0];
+        const filename = `technicians_${today}.xlsx`;
+        XLSX.writeFile(wb, filename);
+        UI.toast(`Exported ${filtered.length} technician${filtered.length === 1 ? '' : 's'} to ${filename}`, 'success');
+    });
 
     document.getElementById('add-tech-btn').addEventListener('click', () => {
         UI.showModal('Add Technician', `
