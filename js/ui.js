@@ -6,6 +6,43 @@ const UI = (() => {
     let currentPage = 'home';
     let tooltipObserver = null;
 
+    const TOOLTIP_BY_ID = {
+        'header-save-btn': 'Save a database snapshot and enable auto-save for this session',
+        'header-info-btn': 'Open app info, manual, and emergency restore tools',
+        'reconnect-btn': 'Reconnect backup folders so automatic saving can continue',
+        'add-tech-btn': 'Create a new technician badge record',
+        'import-techs-btn': 'Import technician records from an Excel spreadsheet',
+        'export-techs-all-btn': 'Export all technician records to an Excel file',
+        'export-techs-filtered-btn': 'Export only technician records matching the current search',
+        'ptn-save-btn': 'Save this technician name to the scanned badge record',
+        'ptn-skip-btn': 'Skip naming for now and continue',
+        'th-run-full': 'Reset data, generate a full demo week, and run all tests',
+        'th-run-tests-only': 'Run verification tests on current data (can modify records)',
+        'th-clear': 'Permanently delete all stored data',
+        'pc-generate': 'Generate labels using the selected options',
+        'pc-print': 'Print the currently generated labels'
+    };
+
+    const TOOLTIP_BY_TEXT = {
+        'save': 'Save your changes',
+        'cancel': 'Cancel and close this dialog',
+        'close': 'Close this window',
+        'edit': 'Edit this record',
+        'remove': 'Remove this item',
+        'delete': 'Delete this item',
+        'clear': 'Clear the current selection',
+        'add': 'Add a new record',
+        'export all': 'Export all records to an Excel file',
+        'export filtered': 'Export only records matching the current search',
+        'export to excel': 'Export records to an Excel spreadsheet',
+        'import from excel': 'Import records from an Excel spreadsheet',
+        'save now': 'Save a backup immediately',
+        'choose folder': 'Choose the folder used for backup and sync',
+        'load from folder': 'Load and merge data from the selected backup folder',
+        'print labels': 'Print the generated labels',
+        'open instruction manual': 'Open the built-in instruction manual'
+    };
+
     function registerPage(name, renderFn) {
         pages[name] = renderFn;
     }
@@ -37,6 +74,13 @@ const UI = (() => {
         return String(text || '').replace(/\s+/g, ' ').trim();
     }
 
+    function _cleanButtonText(text) {
+        return _normalizeTooltipText(text)
+            .replace(/^[^A-Za-z0-9]+/, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     function _tooltipFromId(id) {
         const clean = _normalizeTooltipText(id);
         if (!clean) return '';
@@ -52,8 +96,25 @@ const UI = (() => {
         const dataTooltip = _normalizeTooltipText(button.dataset.tooltip);
         if (dataTooltip) return dataTooltip;
 
-        const text = _normalizeTooltipText(button.textContent);
+        const idKey = _normalizeTooltipText(button.id).toLowerCase();
+        if (idKey && TOOLTIP_BY_ID[idKey]) return TOOLTIP_BY_ID[idKey];
+
+        const text = _cleanButtonText(button.textContent);
         if (text === '×' || text === '✕') return 'Close';
+
+        const textKey = text.toLowerCase();
+        if (textKey && TOOLTIP_BY_TEXT[textKey]) return TOOLTIP_BY_TEXT[textKey];
+
+        if (/^add\s+/i.test(text)) {
+            return `Add ${text.replace(/^add\s+/i, '').trim()} to the database`;
+        }
+        if (/^edit\s+/i.test(text)) {
+            return `Edit ${text.replace(/^edit\s+/i, '').trim()}`;
+        }
+        if (/^save\s+/i.test(text)) {
+            return `Save ${text.replace(/^save\s+/i, '').trim()}`;
+        }
+
         if (text) return text;
 
         const fromId = _tooltipFromId(button.id);
