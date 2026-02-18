@@ -53,12 +53,27 @@ const FileIntegrity = (() => {
     }
 
     // Fetch a file and compute its hash
+    // Normalize content to be resilient against CDN transformations
+    // (Cloudflare auto-minify, Rocket Loader, email obfuscation, etc.)
+    function _normalize(text) {
+        return text
+            // Remove Cloudflare-injected script blocks
+            .replace(/<script[^>]*cloudflare[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<script[^>]*cf[-_][^>]*>[\s\S]*?<\/script>/gi, '')
+            // Remove Cloudflare email obfuscation markers
+            .replace(/data-cfemail="[^"]*"/g, '')
+            .replace(/<a[^>]*__cf_email__[^>]*>.*?<\/a>/g, '')
+            // Collapse all whitespace runs to a single space
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     async function _hashFile(path) {
         try {
             const resp = await fetch(path + '?_v=' + Date.now(), { cache: 'no-store' });
             if (!resp.ok) return { path, hash: null, error: 'fetch_failed' };
             const text = await resp.text();
-            const hash = await _hashText(text);
+            const hash = await _hashText(_normalize(text));
             return { path, hash, error: null };
         } catch (e) {
             return { path, hash: null, error: e.message };

@@ -8,9 +8,12 @@
  */
 const AssetPrefixes = (() => {
     const DEFAULT_PREFIXES = [
-        { prefix: 'WV',  category: 'radio',   label: 'Radio' },
-        { prefix: 'BAT', category: 'battery', label: 'Battery' },
-        { prefix: 'T',   category: 'tool',    label: 'Tool' }
+        { prefix: 'WV',  category: 'radio',     label: 'Radio' },
+        { prefix: 'BAT', category: 'battery',   label: 'Battery' },
+        { prefix: 'T',   category: 'tool',      label: 'Tool' },
+        { prefix: 'PK',  category: 'pitkey',    label: 'PIT Key' },
+        { prefix: 'LT',  category: 'laptop',    label: 'Laptop' },
+        { prefix: 'EV',  category: 'evscanner', label: 'EV Scanner' }
     ];
 
     // Cache to avoid repeated DB reads during a session
@@ -84,14 +87,21 @@ const AssetPrefixes = (() => {
         }
 
         // No prefix match but starts with letter — check asset DBs
-        const radio = await DB.get('radios', value);
-        if (radio) return { type: 'radio', source: 'db' };
-
-        const battery = await DB.get('batteries', value);
-        if (battery) return { type: 'battery', source: 'db' };
-
-        const tool = await DB.get('tools', value);
-        if (tool) return { type: 'tool', source: 'db' };
+        const assetStores = [
+            { store: 'radios', type: 'radio' },
+            { store: 'batteries', type: 'battery' },
+            { store: 'tools', type: 'tool' },
+            { store: 'pitkeys', type: 'pitkey' },
+            { store: 'laptops', type: 'laptop' },
+            { store: 'evscanners', type: 'evscanner' },
+            { store: 'customAssets', type: 'custom' }
+        ];
+        for (const { store, type } of assetStores) {
+            try {
+                const found = await DB.get(store, value);
+                if (found) return { type: found.assetType || type, source: 'db' };
+            } catch (e) { /* store may not exist yet */ }
+        }
 
         // Starts with letter, no match anywhere — treat as badge fallback
         return { type: 'badge', source: 'fallback' };

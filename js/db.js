@@ -5,13 +5,17 @@
  */
 const DB = (() => {
     const DB_NAME = 'AssetTrackerDB';
-    const DB_VERSION = 2;
+    const DB_VERSION = 3;
     let db = null;
 
     const STORES = {
         radios: { keyPath: 'id', indexes: ['serialNumber', 'status', 'model'] },
         batteries: { keyPath: 'id', indexes: ['status', 'model', 'type'] },
         tools: { keyPath: 'id', indexes: ['status', 'model'] },
+        pitkeys: { keyPath: 'id', indexes: ['status', 'model'] },
+        laptops: { keyPath: 'id', indexes: ['serialNumber', 'status', 'model'] },
+        evscanners: { keyPath: 'id', indexes: ['serialNumber', 'status', 'model'] },
+        customAssets: { keyPath: 'id', indexes: ['status', 'model', 'assetType'] },
         technicians: { keyPath: 'id', indexes: ['badgeId', 'name'] },
         transactions: { keyPath: 'id', indexes: ['assetId', 'technicianId', 'type', 'timestamp'] },
         auditLog: { keyPath: 'id', indexes: ['entityId', 'entityType', 'timestamp', 'action'] },

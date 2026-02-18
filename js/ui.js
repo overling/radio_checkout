@@ -239,16 +239,24 @@ const UI = (() => {
     }
 
     // Clerk name
+    function _looksLikePassword(str) {
+        return str && str.length < 20 && /\d/.test(str) && !/\s/.test(str);
+    }
+
     async function initClerk() {
         const el = document.getElementById('header-clerk');
         let name = await DB.getSetting('clerkName', '');
         if (!name) {
-            name = prompt('Enter your name (clerk):') || 'Clerk';
+            name = prompt('Enter your FIRST and LAST NAME (this is NOT a password field).\nExample: Susan Park') || 'Clerk';
+            if (_looksLikePassword(name) && name !== 'Clerk') {
+                const confirm = prompt('⚠️ "' + name + '" looks like a password, not a name.\n\nThis will be displayed publicly in the header and attached to every transaction.\n\nIf this is really your name, type it again. Otherwise enter your actual name:');
+                if (confirm && confirm.trim()) name = confirm.trim();
+            }
             await DB.setSetting('clerkName', name);
         }
         el.textContent = '👤 ' + name;
         el.addEventListener('click', async () => {
-            const newName = prompt('Enter clerk name:', name);
+            const newName = prompt('Enter clerk name (first and last):', name);
             if (newName && newName.trim()) {
                 name = newName.trim();
                 await DB.setSetting('clerkName', name);

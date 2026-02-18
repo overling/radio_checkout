@@ -1,6 +1,49 @@
 /**
- * Asset Management Page - Add/Edit Radios, Batteries, Tools
+ * Asset Management Page - Add/Edit Radios, Batteries, Tools, PIT Keys, Laptops, EV Scanners, Custom
  */
+
+// Reusable Quick Label Generator HTML block for Add modals (all asset types except Technicians)
+function _quickLabelGeneratorHtml(prefix, example, idFieldId) {
+    const uid = 'qlg-' + Math.random().toString(36).substr(2, 6);
+    return {
+        html: `
+            <div class="card" style="padding:0.75rem 1rem; margin-bottom:1rem; background:var(--primary-light);">
+                <div style="font-weight:600; font-size:0.9rem; margin-bottom:0.5rem;">📋 Quick Label Generator</div>
+                <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.5rem;">
+                    Format: <code>[LOCATION]_[DEPT]_[NUMBER]</code> — e.g. ${example}
+                </div>
+                <div style="display:flex; gap:0.5rem; align-items:end; flex-wrap:wrap;">
+                    <div class="form-group" style="margin-bottom:0; flex:1; min-width:100px;">
+                        <label for="${uid}-loc" style="font-size:0.75rem;">Location</label>
+                        <input type="text" id="${uid}-loc" value="WV" style="text-transform:uppercase; font-size:0.85rem; padding:0.4rem;">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0; flex:1; min-width:100px;">
+                        <label for="${uid}-dept" style="font-size:0.75rem;">Department</label>
+                        <input type="text" id="${uid}-dept" placeholder="MAINT" style="text-transform:uppercase; font-size:0.85rem; padding:0.4rem;">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0; width:70px;">
+                        <label for="${uid}-num" style="font-size:0.75rem;">Number</label>
+                        <input type="text" id="${uid}-num" placeholder="01" style="font-size:0.85rem; padding:0.4rem;">
+                    </div>
+                    <button class="btn btn-sm btn-primary" id="${uid}-gen" style="height:32px;">Generate</button>
+                </div>
+            </div>`,
+        wireUp: () => {
+            document.getElementById(`${uid}-gen`).addEventListener('click', () => {
+                const loc = document.getElementById(`${uid}-loc`).value.trim().toUpperCase();
+                const dept = document.getElementById(`${uid}-dept`).value.trim().toUpperCase();
+                const num = document.getElementById(`${uid}-num`).value.trim().padStart(2, '0');
+                if (!loc || !dept || !num) {
+                    UI.toast('Fill in Location, Department, and Number', 'warning');
+                    return;
+                }
+                const label = `${loc}_${dept}_${num}`;
+                document.getElementById(idFieldId).value = label;
+                UI.toast(`Label generated: ${label}`, 'info');
+            });
+        }
+    };
+}
 
 // Print a single label — generate code in main window, then open print window with ONLY the label
 async function _printSingleLabel(assetId, displayLabel, codeType) {
@@ -58,17 +101,25 @@ UI.registerPage('assets', async (container) => {
                 <button class="btn btn-outline" id="goto-export">💾 Export</button>
             </div>
         </div>
-        <div class="tabs">
+        <div class="tabs" id="asset-tabs" style="flex-wrap:wrap;">
             <button class="tab-btn active" data-tab="radios-tab">Radios</button>
             <button class="tab-btn" data-tab="batteries-tab">Batteries</button>
             <button class="tab-btn" data-tab="tools-tab">Tools</button>
+            <button class="tab-btn" data-tab="pitkeys-tab">PIT Keys</button>
+            <button class="tab-btn" data-tab="laptops-tab">Laptops</button>
+            <button class="tab-btn" data-tab="evscanners-tab">EV Scanners</button>
             <button class="tab-btn" data-tab="technicians-tab">Technicians</button>
+            <button class="btn btn-sm btn-outline" id="add-custom-category-btn" style="margin-left:auto;font-size:0.75rem;" title="Add a new custom asset category tab">+ Category</button>
         </div>
 
         <div id="radios-tab" class="tab-content active"></div>
         <div id="batteries-tab" class="tab-content"></div>
         <div id="tools-tab" class="tab-content"></div>
+        <div id="pitkeys-tab" class="tab-content"></div>
+        <div id="laptops-tab" class="tab-content"></div>
+        <div id="evscanners-tab" class="tab-content"></div>
         <div id="technicians-tab" class="tab-content"></div>
+        <div id="custom-categories-container"></div>
     `;
 
     // Tab switching
@@ -85,10 +136,17 @@ UI.registerPage('assets', async (container) => {
     document.getElementById('goto-print-codes').addEventListener('click', () => UI.navigateTo('print-codes'));
     document.getElementById('goto-export').addEventListener('click', () => UI.navigateTo('export'));
 
+    // + Category button
+    document.getElementById('add-custom-category-btn').addEventListener('click', () => showAddCategoryModal());
+
     await renderRadiosTab();
     await renderBatteriesTab();
     await renderToolsTab();
+    await renderPitKeysTab();
+    await renderLaptopsTab();
+    await renderEvScannersTab();
     await renderTechniciansTab();
+    await renderCustomCategoryTabs();
 });
 
 async function renderRadiosTab() {
@@ -518,7 +576,9 @@ async function renderBatteriesTab() {
 }
 
 function showAddBatteryModal() {
+    const qlg = _quickLabelGeneratorHtml('WV', 'WV_BAT_01', 'ab-id');
     UI.showModal('Add Battery', `
+        ${qlg.html}
         <div class="form-group">
             <label for="ab-type">Battery Type</label>
             <select id="ab-type">
@@ -566,6 +626,8 @@ function showAddBatteryModal() {
         <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
         <button class="btn btn-primary" id="ab-save-btn">Save Battery</button>
     `);
+
+    qlg.wireUp();
 
     document.getElementById('ab-type').addEventListener('change', (e) => {
         const isLegacy = e.target.value === 'legacy';
@@ -758,10 +820,12 @@ async function renderToolsTab() {
     }));
 
     document.getElementById('add-tool-btn').addEventListener('click', () => {
+        const qlg = _quickLabelGeneratorHtml('WV', 'WV_TOOL_01', 'at-id');
         UI.showModal('Add Tool', `
+            ${qlg.html}
             <div class="form-group">
                 <label for="at-id">Tool ID *</label>
-                <input type="text" id="at-id" placeholder="e.g. T-001" required>
+                <input type="text" id="at-id" placeholder="e.g. WV_TOOL_01" required>
             </div>
             <div class="form-group">
                 <label for="at-name">Name *</label>
@@ -789,6 +853,7 @@ async function renderToolsTab() {
             <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
             <button class="btn btn-primary" id="at-save-btn">Save Tool</button>
         `);
+        qlg.wireUp();
 
         document.getElementById('at-save-btn').addEventListener('click', async () => {
             const id = document.getElementById('at-id').value.trim();
@@ -1270,5 +1335,725 @@ async function renderTechniciansTab() {
             UI.toast(`Imported: ${imported} new, ${updated} updated, ${skipped} skipped`, 'success', 5000);
             UI.navigateTo('assets');
         });
+    });
+}
+
+// ===== PIT KEYS TAB =====
+async function renderPitKeysTab() {
+    const items = await DB.getAll('pitkeys');
+    const tab = document.getElementById('pitkeys-tab');
+
+    tab.innerHTML = `
+        <div class="filter-bar">
+            <input type="text" id="pitkey-search" placeholder="Search PIT keys...">
+            <select id="pitkey-status-filter">
+                <option value="">All Statuses</option>
+                <option value="Available">Available</option>
+                <option value="Checked Out">Checked Out</option>
+                <option value="Maintenance">Maintenance</option>
+                <option value="Retired">Retired</option>
+                <option value="Lost">Lost</option>
+            </select>
+            <button class="btn btn-primary" id="add-pitkey-btn">+ Add PIT Key</button>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Key #</th>
+                        <th>Vehicle ID</th>
+                        <th>Model</th>
+                        <th>Status</th>
+                        <th>Checkouts</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="pitkeys-tbody"></tbody>
+            </table>
+        </div>
+    `;
+
+    function renderRows(filter = '', statusFilter = '') {
+        const filtered = items.filter(r => {
+            const matchText = !filter ||
+                r.id.toLowerCase().includes(filter) ||
+                (r.keyNumber || '').toLowerCase().includes(filter) ||
+                (r.vehicleId || '').toLowerCase().includes(filter) ||
+                (r.model || '').toLowerCase().includes(filter);
+            const matchStatus = !statusFilter || r.status === statusFilter;
+            return matchText && matchStatus;
+        });
+
+        document.getElementById('pitkeys-tbody').innerHTML = filtered.length === 0
+            ? '<tr><td colspan="7" class="empty-state">No PIT keys found</td></tr>'
+            : filtered.map(r => `
+                <tr>
+                    <td><strong>${r.id}</strong></td>
+                    <td>${r.keyNumber || '—'}</td>
+                    <td>${r.vehicleId || '—'}</td>
+                    <td>${r.model || '—'}</td>
+                    <td>${UI.statusBadge(r.status)}</td>
+                    <td>${r.checkoutCount || 0}</td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline edit-pitkey" data-id="${r.id}">Edit</button>
+                            <button class="btn btn-sm btn-outline status-pitkey" data-id="${r.id}">Status</button>
+                            <button class="btn btn-sm btn-outline history-pitkey" data-id="${r.id}">History</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+        document.querySelectorAll('.edit-pitkey').forEach(btn => {
+            btn.addEventListener('click', () => showEditGenericModal('pitkeys', 'pitkey', 'PIT Key', btn.dataset.id, ['keyNumber', 'vehicleId', 'model', 'notes']));
+        });
+        document.querySelectorAll('.status-pitkey').forEach(btn => {
+            btn.addEventListener('click', () => showStatusChangeModal('pitkey', btn.dataset.id));
+        });
+        document.querySelectorAll('.history-pitkey').forEach(btn => {
+            btn.addEventListener('click', () => showAssetHistory('pitkey', btn.dataset.id));
+        });
+    }
+
+    renderRows();
+
+    document.getElementById('pitkey-search').addEventListener('input', UI.debounce((e) => {
+        renderRows(e.target.value.toLowerCase(), document.getElementById('pitkey-status-filter').value);
+    }));
+    document.getElementById('pitkey-status-filter').addEventListener('change', (e) => {
+        renderRows(document.getElementById('pitkey-search').value.toLowerCase(), e.target.value);
+    });
+
+    document.getElementById('add-pitkey-btn').addEventListener('click', () => {
+        const qlg = _quickLabelGeneratorHtml('WV', 'WV_PIT_01', 'apk-id');
+        UI.showModal('Add PIT Key', `
+            ${qlg.html}
+            <div class="form-group">
+                <label for="apk-id">PIT Key ID *</label>
+                <input type="text" id="apk-id" placeholder="e.g. WV_PIT_01" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="apk-keynum">Key Number</label>
+                    <input type="text" id="apk-keynum" placeholder="e.g. K-42">
+                </div>
+                <div class="form-group">
+                    <label for="apk-vehicle">Vehicle ID</label>
+                    <input type="text" id="apk-vehicle" placeholder="e.g. Tugger-3">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="apk-model">Model / Type</label>
+                <input type="text" id="apk-model" placeholder="e.g. Crown PE 4500">
+            </div>
+            <div class="form-group">
+                <label for="apk-notes">Notes</label>
+                <textarea id="apk-notes" rows="2"></textarea>
+            </div>
+        `, `
+            <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
+            <button class="btn btn-primary" id="apk-save-btn">Save PIT Key</button>
+        `);
+        qlg.wireUp();
+
+        document.getElementById('apk-save-btn').addEventListener('click', async () => {
+            const id = document.getElementById('apk-id').value.trim();
+            if (!id) { UI.toast('PIT Key ID is required', 'error'); return; }
+            const existing = await DB.get('pitkeys', id);
+            if (existing) { UI.toast('A PIT key with this ID already exists', 'error'); return; }
+
+            const item = Models.createPitKey({
+                uniqueId: id,
+                keyNumber: document.getElementById('apk-keynum').value.trim(),
+                vehicleId: document.getElementById('apk-vehicle').value.trim(),
+                model: document.getElementById('apk-model').value.trim(),
+                notes: document.getElementById('apk-notes').value.trim()
+            });
+            await DB.put('pitkeys', item);
+            await DB.put('auditLog', Models.createAuditEntry({
+                entityId: id, entityType: 'pitkey', action: 'created',
+                details: `PIT Key added: ${item.keyNumber || id}`, performedBy: UI.getClerkName()
+            }));
+            UI.closeModal();
+            UI.toast('PIT Key added', 'success');
+            UI.navigateTo('assets');
+        });
+    });
+}
+
+// ===== LAPTOPS TAB =====
+async function renderLaptopsTab() {
+    const items = await DB.getAll('laptops');
+    const tab = document.getElementById('laptops-tab');
+
+    tab.innerHTML = `
+        <div class="filter-bar">
+            <input type="text" id="laptop-search" placeholder="Search laptops...">
+            <select id="laptop-status-filter">
+                <option value="">All Statuses</option>
+                <option value="Available">Available</option>
+                <option value="Checked Out">Checked Out</option>
+                <option value="Maintenance">Maintenance</option>
+                <option value="Retired">Retired</option>
+                <option value="Lost">Lost</option>
+            </select>
+            <button class="btn btn-primary" id="add-laptop-btn">+ Add Laptop</button>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Serial #</th>
+                        <th>Model</th>
+                        <th>Hostname</th>
+                        <th>Status</th>
+                        <th>Checkouts</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="laptops-tbody"></tbody>
+            </table>
+        </div>
+    `;
+
+    function renderRows(filter = '', statusFilter = '') {
+        const filtered = items.filter(r => {
+            const matchText = !filter ||
+                r.id.toLowerCase().includes(filter) ||
+                (r.serialNumber || '').toLowerCase().includes(filter) ||
+                (r.model || '').toLowerCase().includes(filter) ||
+                (r.hostname || '').toLowerCase().includes(filter);
+            const matchStatus = !statusFilter || r.status === statusFilter;
+            return matchText && matchStatus;
+        });
+
+        document.getElementById('laptops-tbody').innerHTML = filtered.length === 0
+            ? '<tr><td colspan="7" class="empty-state">No laptops found</td></tr>'
+            : filtered.map(r => `
+                <tr>
+                    <td><strong>${r.id}</strong></td>
+                    <td>${r.serialNumber || '—'}</td>
+                    <td>${r.model || '—'}</td>
+                    <td>${r.hostname || '—'}</td>
+                    <td>${UI.statusBadge(r.status)}</td>
+                    <td>${r.checkoutCount || 0}</td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline edit-laptop" data-id="${r.id}">Edit</button>
+                            <button class="btn btn-sm btn-outline status-laptop" data-id="${r.id}">Status</button>
+                            <button class="btn btn-sm btn-outline history-laptop" data-id="${r.id}">History</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+        document.querySelectorAll('.edit-laptop').forEach(btn => {
+            btn.addEventListener('click', () => showEditGenericModal('laptops', 'laptop', 'Laptop', btn.dataset.id, ['serialNumber', 'model', 'hostname', 'notes']));
+        });
+        document.querySelectorAll('.status-laptop').forEach(btn => {
+            btn.addEventListener('click', () => showStatusChangeModal('laptop', btn.dataset.id));
+        });
+        document.querySelectorAll('.history-laptop').forEach(btn => {
+            btn.addEventListener('click', () => showAssetHistory('laptop', btn.dataset.id));
+        });
+    }
+
+    renderRows();
+
+    document.getElementById('laptop-search').addEventListener('input', UI.debounce((e) => {
+        renderRows(e.target.value.toLowerCase(), document.getElementById('laptop-status-filter').value);
+    }));
+    document.getElementById('laptop-status-filter').addEventListener('change', (e) => {
+        renderRows(document.getElementById('laptop-search').value.toLowerCase(), e.target.value);
+    });
+
+    document.getElementById('add-laptop-btn').addEventListener('click', () => {
+        const qlg = _quickLabelGeneratorHtml('WV', 'WV_LAPTOP_01', 'alp-id');
+        UI.showModal('Add Laptop', `
+            ${qlg.html}
+            <div class="form-group">
+                <label for="alp-id">Laptop ID *</label>
+                <input type="text" id="alp-id" placeholder="e.g. WV_LAPTOP_01" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="alp-serial">Serial Number</label>
+                    <input type="text" id="alp-serial">
+                </div>
+                <div class="form-group">
+                    <label for="alp-model">Model</label>
+                    <input type="text" id="alp-model" placeholder="e.g. Dell Latitude 5520">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="alp-hostname">Hostname</label>
+                <input type="text" id="alp-hostname" placeholder="e.g. WV-PC-042">
+            </div>
+            <div class="form-group">
+                <label for="alp-notes">Notes</label>
+                <textarea id="alp-notes" rows="2"></textarea>
+            </div>
+        `, `
+            <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
+            <button class="btn btn-primary" id="alp-save-btn">Save Laptop</button>
+        `);
+        qlg.wireUp();
+
+        document.getElementById('alp-save-btn').addEventListener('click', async () => {
+            const id = document.getElementById('alp-id').value.trim();
+            if (!id) { UI.toast('Laptop ID is required', 'error'); return; }
+            const existing = await DB.get('laptops', id);
+            if (existing) { UI.toast('A laptop with this ID already exists', 'error'); return; }
+
+            const item = Models.createLaptop({
+                uniqueId: id,
+                serialNumber: document.getElementById('alp-serial').value.trim(),
+                model: document.getElementById('alp-model').value.trim(),
+                hostname: document.getElementById('alp-hostname').value.trim(),
+                notes: document.getElementById('alp-notes').value.trim()
+            });
+            await DB.put('laptops', item);
+            await DB.put('auditLog', Models.createAuditEntry({
+                entityId: id, entityType: 'laptop', action: 'created',
+                details: `Laptop added: ${item.model || id}`, performedBy: UI.getClerkName()
+            }));
+            UI.closeModal();
+            UI.toast('Laptop added', 'success');
+            UI.navigateTo('assets');
+        });
+    });
+}
+
+// ===== EV SCANNERS TAB =====
+async function renderEvScannersTab() {
+    const items = await DB.getAll('evscanners');
+    const tab = document.getElementById('evscanners-tab');
+
+    tab.innerHTML = `
+        <div class="filter-bar">
+            <input type="text" id="evscanner-search" placeholder="Search EV scanners...">
+            <select id="evscanner-status-filter">
+                <option value="">All Statuses</option>
+                <option value="Available">Available</option>
+                <option value="Checked Out">Checked Out</option>
+                <option value="Maintenance">Maintenance</option>
+                <option value="Retired">Retired</option>
+                <option value="Lost">Lost</option>
+            </select>
+            <button class="btn btn-primary" id="add-evscanner-btn">+ Add EV Scanner</button>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Serial #</th>
+                        <th>Model</th>
+                        <th>Status</th>
+                        <th>Checkouts</th>
+                        <th>Repairs</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="evscanners-tbody"></tbody>
+            </table>
+        </div>
+    `;
+
+    function renderRows(filter = '', statusFilter = '') {
+        const filtered = items.filter(r => {
+            const matchText = !filter ||
+                r.id.toLowerCase().includes(filter) ||
+                (r.serialNumber || '').toLowerCase().includes(filter) ||
+                (r.model || '').toLowerCase().includes(filter);
+            const matchStatus = !statusFilter || r.status === statusFilter;
+            return matchText && matchStatus;
+        });
+
+        document.getElementById('evscanners-tbody').innerHTML = filtered.length === 0
+            ? '<tr><td colspan="7" class="empty-state">No EV scanners found</td></tr>'
+            : filtered.map(r => `
+                <tr>
+                    <td><strong>${r.id}</strong></td>
+                    <td>${r.serialNumber || '—'}</td>
+                    <td>${r.model || '—'}</td>
+                    <td>${UI.statusBadge(r.status)}</td>
+                    <td>${r.checkoutCount || 0}</td>
+                    <td>${r.repairCount || 0}</td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline edit-evscanner" data-id="${r.id}">Edit</button>
+                            <button class="btn btn-sm btn-outline status-evscanner" data-id="${r.id}">Status</button>
+                            <button class="btn btn-sm btn-outline history-evscanner" data-id="${r.id}">History</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+        document.querySelectorAll('.edit-evscanner').forEach(btn => {
+            btn.addEventListener('click', () => showEditGenericModal('evscanners', 'evscanner', 'EV Scanner', btn.dataset.id, ['serialNumber', 'model', 'notes']));
+        });
+        document.querySelectorAll('.status-evscanner').forEach(btn => {
+            btn.addEventListener('click', () => showStatusChangeModal('evscanner', btn.dataset.id));
+        });
+        document.querySelectorAll('.history-evscanner').forEach(btn => {
+            btn.addEventListener('click', () => showAssetHistory('evscanner', btn.dataset.id));
+        });
+    }
+
+    renderRows();
+
+    document.getElementById('evscanner-search').addEventListener('input', UI.debounce((e) => {
+        renderRows(e.target.value.toLowerCase(), document.getElementById('evscanner-status-filter').value);
+    }));
+    document.getElementById('evscanner-status-filter').addEventListener('change', (e) => {
+        renderRows(document.getElementById('evscanner-search').value.toLowerCase(), e.target.value);
+    });
+
+    document.getElementById('add-evscanner-btn').addEventListener('click', () => {
+        const qlg = _quickLabelGeneratorHtml('WV', 'WV_EVSCAN_01', 'aev-id');
+        UI.showModal('Add EV Scanner', `
+            ${qlg.html}
+            <div class="form-group">
+                <label for="aev-id">EV Scanner ID *</label>
+                <input type="text" id="aev-id" placeholder="e.g. WV_EVSCAN_01" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="aev-serial">Serial Number</label>
+                    <input type="text" id="aev-serial">
+                </div>
+                <div class="form-group">
+                    <label for="aev-model">Model</label>
+                    <input type="text" id="aev-model" placeholder="e.g. Zebra TC52">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="aev-notes">Notes</label>
+                <textarea id="aev-notes" rows="2"></textarea>
+            </div>
+        `, `
+            <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
+            <button class="btn btn-primary" id="aev-save-btn">Save EV Scanner</button>
+        `);
+        qlg.wireUp();
+
+        document.getElementById('aev-save-btn').addEventListener('click', async () => {
+            const id = document.getElementById('aev-id').value.trim();
+            if (!id) { UI.toast('EV Scanner ID is required', 'error'); return; }
+            const existing = await DB.get('evscanners', id);
+            if (existing) { UI.toast('An EV scanner with this ID already exists', 'error'); return; }
+
+            const item = Models.createEvScanner({
+                uniqueId: id,
+                serialNumber: document.getElementById('aev-serial').value.trim(),
+                model: document.getElementById('aev-model').value.trim(),
+                notes: document.getElementById('aev-notes').value.trim()
+            });
+            await DB.put('evscanners', item);
+            await DB.put('auditLog', Models.createAuditEntry({
+                entityId: id, entityType: 'evscanner', action: 'created',
+                details: `EV Scanner added: ${item.model || id}`, performedBy: UI.getClerkName()
+            }));
+            UI.closeModal();
+            UI.toast('EV Scanner added', 'success');
+            UI.navigateTo('assets');
+        });
+    });
+}
+
+// ===== GENERIC EDIT MODAL (for PIT Keys, Laptops, EV Scanners, Custom) =====
+function showEditGenericModal(storeName, assetType, label, assetId, fields) {
+    DB.get(storeName, assetId).then(asset => {
+        if (!asset) return;
+
+        const fieldLabels = {
+            serialNumber: 'Serial Number', model: 'Model', notes: 'Notes',
+            keyNumber: 'Key Number', vehicleId: 'Vehicle ID', hostname: 'Hostname',
+            name: 'Name', category: 'Category'
+        };
+
+        let formHtml = `<div class="form-group"><label>${label} ID</label><input type="text" value="${asset.id}" disabled></div>`;
+        for (const f of fields) {
+            const lbl = fieldLabels[f] || f;
+            if (f === 'notes') {
+                formHtml += `<div class="form-group"><label for="eg-${f}">${lbl}</label><textarea id="eg-${f}" rows="2">${asset[f] || ''}</textarea></div>`;
+            } else {
+                formHtml += `<div class="form-group"><label for="eg-${f}">${lbl}</label><input type="text" id="eg-${f}" value="${asset[f] || ''}"></div>`;
+            }
+        }
+
+        UI.showModal(`Edit ${label}: ${assetId}`, formHtml, `
+            <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
+            <button class="btn btn-primary" id="eg-save-btn">Save Changes</button>
+        `);
+
+        document.getElementById('eg-save-btn').addEventListener('click', async () => {
+            for (const f of fields) {
+                asset[f] = document.getElementById(`eg-${f}`).value.trim();
+            }
+            asset.updatedAt = Models.now();
+            await DB.put(storeName, asset);
+            await DB.put('auditLog', Models.createAuditEntry({
+                entityId: assetId, entityType: assetType, action: 'updated',
+                details: `${label} details updated`, performedBy: UI.getClerkName()
+            }));
+            UI.closeModal();
+            UI.toast(`${label} updated`, 'success');
+            UI.navigateTo('assets');
+        });
+    });
+}
+
+// ===== CUSTOM CATEGORY SYSTEM =====
+async function getCustomCategories() {
+    return await DB.getSetting('customAssetCategories', []);
+}
+
+async function saveCustomCategories(cats) {
+    await DB.setSetting('customAssetCategories', cats);
+}
+
+function showAddCategoryModal() {
+    UI.showModal('Add Custom Asset Category', `
+        <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:1rem;">
+            Create a new asset type tab. Assets will be stored in the shared custom assets database and can be checked out like radios.
+        </p>
+        <div class="form-group">
+            <label for="cc-name">Category Name *</label>
+            <input type="text" id="cc-name" placeholder="e.g. Pallet Jacks" required>
+        </div>
+        <div class="form-group">
+            <label for="cc-prefix">Scanner Prefix</label>
+            <input type="text" id="cc-prefix" placeholder="e.g. PJ" style="text-transform:uppercase;">
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem;">Optional. If set, scanned IDs starting with this prefix will be identified as this asset type.</div>
+        </div>
+    `, `
+        <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="cc-save-btn">Create Category</button>
+    `);
+
+    document.getElementById('cc-save-btn').addEventListener('click', async () => {
+        const name = document.getElementById('cc-name').value.trim();
+        if (!name) { UI.toast('Category name is required', 'error'); return; }
+
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+        const prefix = document.getElementById('cc-prefix').value.trim().toUpperCase();
+        const icon = '📦';
+
+        const cats = await getCustomCategories();
+        if (cats.some(c => c.slug === slug)) {
+            UI.toast('A category with this name already exists', 'error');
+            return;
+        }
+
+        cats.push({ name, slug, prefix, icon, createdAt: new Date().toISOString() });
+        await saveCustomCategories(cats);
+
+        if (prefix) {
+            const prefixes = await AssetPrefixes.getAll();
+            if (!prefixes.some(p => p.prefix.toUpperCase() === prefix)) {
+                prefixes.push({ prefix, category: slug, label: name });
+                await AssetPrefixes.save(prefixes);
+            }
+        }
+
+        UI.closeModal();
+        UI.toast(`Category "${name}" created`, 'success');
+        UI.navigateTo('assets');
+    });
+}
+
+async function renderCustomCategoryTabs() {
+    const cats = await getCustomCategories();
+    if (cats.length === 0) return;
+
+    const tabBar = document.getElementById('asset-tabs');
+    const container = document.getElementById('custom-categories-container');
+    const addBtn = document.getElementById('add-custom-category-btn');
+
+    for (const cat of cats) {
+        const tabId = `custom-${cat.slug}-tab`;
+
+        const tabBtn = document.createElement('button');
+        tabBtn.className = 'tab-btn';
+        tabBtn.dataset.tab = tabId;
+        tabBtn.textContent = `${cat.icon} ${cat.name}`;
+        tabBar.insertBefore(tabBtn, addBtn);
+
+        const tabDiv = document.createElement('div');
+        tabDiv.id = tabId;
+        tabDiv.className = 'tab-content';
+        container.appendChild(tabDiv);
+
+        tabBtn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            tabBtn.classList.add('active');
+            tabDiv.classList.add('active');
+        });
+
+        await renderCustomCategoryTab(cat, tabDiv);
+    }
+}
+
+async function renderCustomCategoryTab(cat, tab) {
+    const allCustom = await DB.getAll('customAssets');
+    const items = allCustom.filter(a => a.assetType === cat.slug);
+    const searchId = `cc-search-${cat.slug}`;
+    const statusId = `cc-status-${cat.slug}`;
+    const tbodyId = `cc-tbody-${cat.slug}`;
+
+    tab.innerHTML = `
+        <div class="filter-bar">
+            <input type="text" id="${searchId}" placeholder="Search ${cat.name.toLowerCase()}...">
+            <select id="${statusId}">
+                <option value="">All Statuses</option>
+                <option value="Available">Available</option>
+                <option value="Checked Out">Checked Out</option>
+                <option value="Maintenance">Maintenance</option>
+                <option value="Retired">Retired</option>
+                <option value="Lost">Lost</option>
+            </select>
+            <button class="btn btn-primary cc-add-btn" data-slug="${cat.slug}" data-name="${cat.name}">+ Add ${cat.name}</button>
+            <button class="btn btn-sm btn-outline cc-delete-cat" data-slug="${cat.slug}" data-name="${cat.name}" style="color:var(--danger);" title="Delete this category and all its assets">🗑️</button>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Serial #</th>
+                        <th>Model</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="${tbodyId}"></tbody>
+            </table>
+        </div>
+    `;
+
+    function renderRows(filter = '', statusFilter = '') {
+        const filtered = items.filter(r => {
+            const matchText = !filter ||
+                r.id.toLowerCase().includes(filter) ||
+                (r.name || '').toLowerCase().includes(filter) ||
+                (r.serialNumber || '').toLowerCase().includes(filter) ||
+                (r.model || '').toLowerCase().includes(filter);
+            const matchStatus = !statusFilter || r.status === statusFilter;
+            return matchText && matchStatus;
+        });
+
+        document.getElementById(tbodyId).innerHTML = filtered.length === 0
+            ? `<tr><td colspan="6" class="empty-state">No ${cat.name.toLowerCase()} found</td></tr>`
+            : filtered.map(r => `
+                <tr>
+                    <td><strong>${r.id}</strong></td>
+                    <td>${r.name || '—'}</td>
+                    <td>${r.serialNumber || '—'}</td>
+                    <td>${r.model || '—'}</td>
+                    <td>${UI.statusBadge(r.status)}</td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline edit-cc-${cat.slug}" data-id="${r.id}">Edit</button>
+                            <button class="btn btn-sm btn-outline status-cc-${cat.slug}" data-id="${r.id}">Status</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+        document.querySelectorAll(`.edit-cc-${cat.slug}`).forEach(btn => {
+            btn.addEventListener('click', () => showEditGenericModal('customAssets', cat.slug, cat.name, btn.dataset.id, ['name', 'serialNumber', 'model', 'notes']));
+        });
+        document.querySelectorAll(`.status-cc-${cat.slug}`).forEach(btn => {
+            btn.addEventListener('click', () => showStatusChangeModal(cat.slug, btn.dataset.id));
+        });
+    }
+
+    renderRows();
+
+    document.getElementById(searchId).addEventListener('input', UI.debounce((e) => {
+        renderRows(e.target.value.toLowerCase(), document.getElementById(statusId).value);
+    }));
+    document.getElementById(statusId).addEventListener('change', (e) => {
+        renderRows(document.getElementById(searchId).value.toLowerCase(), e.target.value);
+    });
+
+    tab.querySelector('.cc-add-btn').addEventListener('click', () => {
+        const qlg = _quickLabelGeneratorHtml('WV', `WV_${cat.slug.toUpperCase()}_01`, `acc-${cat.slug}-id`);
+        UI.showModal(`Add ${cat.name}`, `
+            ${qlg.html}
+            <div class="form-group">
+                <label for="acc-${cat.slug}-id">${cat.name} ID *</label>
+                <input type="text" id="acc-${cat.slug}-id" placeholder="e.g. WV_${cat.slug.toUpperCase()}_01" required>
+            </div>
+            <div class="form-group">
+                <label for="acc-${cat.slug}-name">Name</label>
+                <input type="text" id="acc-${cat.slug}-name" placeholder="Descriptive name">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="acc-${cat.slug}-serial">Serial Number</label>
+                    <input type="text" id="acc-${cat.slug}-serial">
+                </div>
+                <div class="form-group">
+                    <label for="acc-${cat.slug}-model">Model</label>
+                    <input type="text" id="acc-${cat.slug}-model">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="acc-${cat.slug}-notes">Notes</label>
+                <textarea id="acc-${cat.slug}-notes" rows="2"></textarea>
+            </div>
+        `, `
+            <button class="btn btn-outline" onclick="UI.closeModal()">Cancel</button>
+            <button class="btn btn-primary" id="acc-${cat.slug}-save">Save ${cat.name}</button>
+        `);
+        qlg.wireUp();
+
+        document.getElementById(`acc-${cat.slug}-save`).addEventListener('click', async () => {
+            const id = document.getElementById(`acc-${cat.slug}-id`).value.trim();
+            if (!id) { UI.toast(`${cat.name} ID is required`, 'error'); return; }
+            const existing = await DB.get('customAssets', id);
+            if (existing) { UI.toast(`An asset with this ID already exists`, 'error'); return; }
+
+            const item = Models.createCustomAsset({
+                uniqueId: id,
+                assetType: cat.slug,
+                name: document.getElementById(`acc-${cat.slug}-name`).value.trim(),
+                serialNumber: document.getElementById(`acc-${cat.slug}-serial`).value.trim(),
+                model: document.getElementById(`acc-${cat.slug}-model`).value.trim(),
+                notes: document.getElementById(`acc-${cat.slug}-notes`).value.trim()
+            });
+            await DB.put('customAssets', item);
+            await DB.put('auditLog', Models.createAuditEntry({
+                entityId: id, entityType: cat.slug, action: 'created',
+                details: `${cat.name} added: ${item.name || id}`, performedBy: UI.getClerkName()
+            }));
+            UI.closeModal();
+            UI.toast(`${cat.name} added`, 'success');
+            UI.navigateTo('assets');
+        });
+    });
+
+    tab.querySelector('.cc-delete-cat').addEventListener('click', async () => {
+        if (!window.confirm(`Delete the "${cat.name}" category and ALL its assets? This cannot be undone.`)) return;
+        const allCustom = await DB.getAll('customAssets');
+        const toDelete = allCustom.filter(a => a.assetType === cat.slug);
+        for (const item of toDelete) {
+            await DB.remove('customAssets', item.id);
+        }
+        const cats = await getCustomCategories();
+        await saveCustomCategories(cats.filter(c => c.slug !== cat.slug));
+
+        const prefixes = await AssetPrefixes.getAll();
+        await AssetPrefixes.save(prefixes.filter(p => p.category !== cat.slug));
+
+        UI.toast(`Category "${cat.name}" deleted`, 'success');
+        UI.navigateTo('assets');
     });
 }

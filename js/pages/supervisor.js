@@ -125,8 +125,11 @@ UI.registerPage('supervisor', async (container) => {
         <div id="sv-email" class="card no-print">
             <div class="card-header"><h3>📧 Email Notifications</h3></div>
             <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.75rem;">
-                Manage recipients for overdue radio alerts. Toggle each contact on/off. Click <strong>Send Overdue Alert</strong> to email all enabled contacts.
+                Manage recipients for overdue radio alerts. Toggle each contact on/off. Click <strong>Send Overdue Alert</strong> to compose an email to all enabled contacts.
             </p>
+            <div style="background:var(--info-light, #e8f4fd);border:1px solid var(--info, #3b82f6);border-radius:var(--radius);padding:0.6rem 0.75rem;margin-bottom:0.75rem;font-size:0.8rem;color:var(--text-secondary);">
+                <strong>How this works:</strong> Clicking "Send Overdue Alert" opens your default email client (e.g. Outlook) with the recipients, subject, and overdue radio details already filled in. You review the message and hit Send in Outlook. This app does not send emails on its own — it uses your existing corporate email account so everything goes through your normal mail server.
+            </div>
             <div id="sv-email-list" style="margin-bottom:0.75rem;"></div>
             <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;">
                 <input type="email" id="sv-email-input" placeholder="email@example.com" style="flex:1;min-width:200px;" autocomplete="off">

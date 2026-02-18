@@ -28,6 +28,11 @@ UI.registerPage('checkout', async (container) => {
                 </div>
             </div>
 
+            <div class="card" id="co-help-tip" style="margin-bottom:1rem; padding:0.6rem 0.9rem; background:var(--info-light, #e8f4fd); border:1px solid var(--info, #2196F3); border-radius:var(--radius); font-size:0.85rem; line-height:1.5;">
+                <strong>How this works:</strong> Scan the <strong>radio</strong> first, then scan the technician's <strong>badge</strong>.
+                <span style="color:var(--text-muted);">If you scan the wrong thing, click <em>"Wrong radio? Re-scan"</em> to start over. If the radio is broken after checkout, click <em>"Radio Faulty — Swap It"</em> to instantly exchange it.</span>
+            </div>
+
             <div id="co-step1" class="workflow-step active-step">
                 <div class="step-title"><span class="step-number">1</span> Scan Radio</div>
                 <div class="scan-input-group">
@@ -46,6 +51,12 @@ UI.registerPage('checkout', async (container) => {
                     <button class="btn btn-outline" id="co-tech-camera" title="Use Camera">📷</button>
                 </div>
                 <div id="co-tech-result" class="step-result" style="display:none"></div>
+                <div style="margin-top:0.6rem; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                    <button class="btn btn-outline btn-sm" id="co-wrong-radio-btn" style="font-size:0.82rem; color:var(--text-muted);">
+                        ↩ Wrong radio? Re-scan
+                    </button>
+                    <span style="font-size:0.78rem; color:var(--text-muted);">Goes back to Step 1 — nothing is saved yet.</span>
+                </div>
             </div>
 
             <div id="co-step3" class="workflow-step" style="opacity:0.5; pointer-events:none;">
@@ -64,12 +75,19 @@ UI.registerPage('checkout', async (container) => {
                 <button class="btn btn-primary btn-lg" id="co-another-btn" style="margin-top:1rem; width:100%;">
                     Check Out Another Radio
                 </button>
+                <button class="btn btn-outline btn-lg" id="co-swap-btn" style="margin-top:0.5rem; width:100%; color:var(--warning, #b45309);">
+                    🔄 Radio Faulty — Swap It
+                </button>
+                <div style="text-align:center; margin-top:0.4rem; font-size:0.78rem; color:var(--text-muted); line-height:1.4;">
+                    Radio doesn't work? This will <strong>return it as broken</strong> and let you scan a <strong>replacement</strong> for the same tech. One scan and done.
+                </div>
             </div>
         </div>
     `;
 
     let radioId = null;
     let techId = null;
+    let techName = null;
     let autoResetTimer = null;
 
     const radioInput = document.getElementById('co-radio-input');
@@ -89,6 +107,33 @@ UI.registerPage('checkout', async (container) => {
 
     function isAutoCheckout() {
         return autoCheckbox.checked;
+    }
+
+    // Reset back to step 1 so clerk can re-scan a different radio
+    function resetToStep1() {
+        radioId = null;
+        techId = null;
+        techName = null;
+        radioInput.value = '';
+        techInput.value = '';
+        document.getElementById('co-radio-result').style.display = 'none';
+        document.getElementById('co-tech-result').style.display = 'none';
+
+        const step1 = document.getElementById('co-step1');
+        step1.classList.remove('completed-step');
+        step1.classList.add('active-step');
+
+        const step2 = document.getElementById('co-step2');
+        step2.classList.remove('active-step', 'completed-step');
+        step2.style.opacity = '0.5';
+        step2.style.pointerEvents = 'none';
+
+        const step3 = document.getElementById('co-step3');
+        step3.classList.remove('active-step', 'completed-step');
+        step3.style.opacity = '0.5';
+        step3.style.pointerEvents = 'none';
+
+        radioInput.focus();
     }
 
     // Step 1: Radio scan
@@ -127,6 +172,13 @@ UI.registerPage('checkout', async (container) => {
             step2.classList.add('active-step');
             techInput.value = '';
             techInput.focus();
+
+            // If a swap is pending, auto-fill the tech and complete checkout
+            if (window._swapPendingTechId) {
+                const pendingTech = window._swapPendingTechId;
+                window._swapPendingTechId = null;
+                setTimeout(() => handleTechScan(pendingTech), 100);
+            }
         });
     }
 
@@ -152,6 +204,7 @@ UI.registerPage('checkout', async (container) => {
         resultEl.style.display = 'block';
 
         const tech = await DB.get('technicians', value);
+        techName = tech ? (tech.name || tech.badgeId) : value;
         if (tech) {
             resultEl.className = 'step-result success';
             resultEl.textContent = `✓ ${tech.name || tech.badgeId} ${tech.department ? '(' + tech.department + ')' : ''}`;
@@ -242,10 +295,52 @@ UI.registerPage('checkout', async (container) => {
     // Step 3: Manual confirm
     document.getElementById('co-confirm-btn').addEventListener('click', () => performCheckout());
 
+    // Wrong radio — go back to step 1
+    document.getElementById('co-wrong-radio-btn').addEventListener('click', () => {
+        resetToStep1();
+    });
+
     // Another checkout (also clears timer)
     document.getElementById('co-another-btn').addEventListener('click', () => {
         if (autoResetTimer) clearInterval(autoResetTimer);
         UI.navigateTo('checkout');
+    });
+
+    // Swap: return the faulty radio and immediately start checkout for same tech
+    document.getElementById('co-swap-btn').addEventListener('click', async () => {
+        if (autoResetTimer) clearInterval(autoResetTimer);
+        const badRadio = radioId;
+        const swapTechId = techId;
+        const swapTechName = techName;
+        if (!badRadio || !swapTechId) { UI.navigateTo('checkout'); return; }
+
+        try {
+            await Models.returnRadio(badRadio, 'Needs Repair', UI.getClerkName(),
+                'Returned during swap — radio faulty at checkout');
+            UI.toast(`Radio ${badRadio} returned. Now scan a replacement for ${swapTechName || swapTechId}.`, 'info', 4000);
+        } catch (e) {
+            UI.toast(`Could not return ${badRadio}: ${e.message}`, 'warning', 4000);
+        }
+
+        // Pre-fill the tech badge so clerk only needs to scan the new radio
+        UI.navigateTo('checkout');
+        // Small delay to let the page re-render, then inject the tech badge
+        setTimeout(() => {
+            const techEl = document.getElementById('co-tech-input');
+            if (techEl) {
+                // Show a prominent banner so clerk knows what to do
+                const panel = document.querySelector('.workflow-panel');
+                if (panel) {
+                    const banner = document.createElement('div');
+                    banner.className = 'alert alert-warning';
+                    banner.style.cssText = 'margin-bottom:1rem; font-weight:600; font-size:0.95rem;';
+                    banner.innerHTML = `🔄 Swap in progress — scan a replacement radio for <strong>${swapTechName || swapTechId}</strong>`;
+                    panel.prepend(banner);
+                }
+                // Store the tech ID so it auto-fills after radio scan
+                window._swapPendingTechId = swapTechId;
+            }
+        }, 150);
     });
 
     // Setup keyboard scanner listener

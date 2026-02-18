@@ -70,6 +70,79 @@ const Models = (() => {
         };
     }
 
+    // ===== PIT KEY =====
+    function createPitKey({ uniqueId, keyNumber, vehicleId, model, notes = '' }) {
+        return {
+            id: uniqueId || generateId(),
+            keyNumber: keyNumber || '',
+            vehicleId: vehicleId || '',
+            model: model || '',
+            assetType: 'pitkey',
+            inServiceDate: now(),
+            outOfServiceDate: null,
+            status: 'Available',
+            checkoutCount: 0,
+            notes: notes,
+            createdAt: now(),
+            updatedAt: now()
+        };
+    }
+
+    // ===== LAPTOP =====
+    function createLaptop({ uniqueId, serialNumber, model, hostname, notes = '' }) {
+        return {
+            id: uniqueId || generateId(),
+            serialNumber: serialNumber || '',
+            model: model || '',
+            hostname: hostname || '',
+            assetType: 'laptop',
+            inServiceDate: now(),
+            outOfServiceDate: null,
+            status: 'Available',
+            checkoutCount: 0,
+            notes: notes,
+            createdAt: now(),
+            updatedAt: now()
+        };
+    }
+
+    // ===== EV SCANNER =====
+    function createEvScanner({ uniqueId, serialNumber, model, notes = '' }) {
+        return {
+            id: uniqueId || generateId(),
+            serialNumber: serialNumber || '',
+            model: model || '',
+            assetType: 'evscanner',
+            inServiceDate: now(),
+            outOfServiceDate: null,
+            status: 'Available',
+            checkoutCount: 0,
+            repairCount: 0,
+            maintenanceHistory: [],
+            notes: notes,
+            createdAt: now(),
+            updatedAt: now()
+        };
+    }
+
+    // ===== CUSTOM ASSET =====
+    function createCustomAsset({ uniqueId, assetType, serialNumber, model, name, notes = '' }) {
+        return {
+            id: uniqueId || generateId(),
+            name: name || '',
+            serialNumber: serialNumber || '',
+            model: model || '',
+            assetType: assetType || 'custom',
+            inServiceDate: now(),
+            outOfServiceDate: null,
+            status: 'Available',
+            checkoutCount: 0,
+            notes: notes,
+            createdAt: now(),
+            updatedAt: now()
+        };
+    }
+
     // ===== TECHNICIAN =====
     function createTechnician({ badgeId, firstName = '', lastName = '', name, department = '' }) {
         const fullName = (firstName || lastName)
@@ -158,7 +231,7 @@ const Models = (() => {
                 t.assetId === checkout.assetId &&
                 t.technicianId === checkout.technicianId &&
                 t.type === 'return' &&
-                new Date(t.timestamp) > new Date(checkout.timestamp)
+                new Date(t.timestamp) >= new Date(checkout.timestamp)
             );
             if (!hasReturn) {
                 throw new Error(`Technician "${technician.name || technicianBadgeId}" already has radio "${checkout.assetId}" checked out. Return it first.`);
@@ -253,8 +326,16 @@ const Models = (() => {
         return { radio, transaction, flagForSupervisor: condition !== 'Good' };
     }
 
+    function getStoreForAssetType(assetType) {
+        const map = {
+            radio: 'radios', battery: 'batteries', tool: 'tools',
+            pitkey: 'pitkeys', laptop: 'laptops', evscanner: 'evscanners'
+        };
+        return map[assetType] || 'customAssets';
+    }
+
     async function changeAssetStatus(assetType, assetId, newStatus, reason, performedBy) {
-        const storeName = assetType === 'radio' ? 'radios' : assetType === 'battery' ? 'batteries' : 'tools';
+        const storeName = getStoreForAssetType(assetType);
         const asset = await DB.get(storeName, assetId);
         if (!asset) throw new Error(`${assetType} "${assetId}" not found.`);
 
@@ -407,12 +488,17 @@ const Models = (() => {
         createRadio,
         createBattery,
         createTool,
+        createPitKey,
+        createLaptop,
+        createEvScanner,
+        createCustomAsset,
         createTechnician,
         createTransaction,
         createAuditEntry,
         checkoutRadio,
         returnRadio,
         changeAssetStatus,
+        getStoreForAssetType,
         getBatteryDaysInService,
         getBatteryLifespan,
         getBatteryStats,

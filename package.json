@@ -1,0 +1,27 @@
+{
+  "name": "radio",
+  "version": "1.0.0",
+  "description": "A fully browser-based inventory and lifecycle management system for tracking Motorola radios, batteries, and tool assets. Designed for use in a clerk station environment where technicians check out and return radios at shift changes.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "npx playwright test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/overling/radio_checkout.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/overling/radio_checkout/issues"
+  },
+  "homepage": "https://github.com/overling/radio_checkout#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

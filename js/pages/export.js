@@ -5,6 +5,10 @@ UI.registerPage('export', async (container) => {
     const radioCount = await DB.count('radios');
     const batteryCount = await DB.count('batteries');
     const toolCount = await DB.count('tools');
+    const pitkeyCount = await DB.count('pitkeys');
+    const laptopCount = await DB.count('laptops');
+    const evscannerCount = await DB.count('evscanners');
+    const customAssetCount = await DB.count('customAssets');
     const txCount = await DB.count('transactions');
     const auditCount = await DB.count('auditLog');
     const techCount = await DB.count('technicians');
@@ -37,16 +41,15 @@ UI.registerPage('export', async (container) => {
             <div class="card-header">
                 <h3>⏰ Auto-Backup Schedule</h3>
             </div>
-            <p style="margin-bottom:1rem; color:var(--gray-600);">
-                Automatically saves a backup at the end of each shift. Backups are stored in the browser and can be downloaded anytime.
-                The oldest backup is automatically deleted when the limit is reached.
-            </p>
             <div style="display:grid;grid-template-columns:auto 1fr;gap:0.75rem 1.25rem;align-items:center;margin-bottom:1.25rem;">
                 <label style="font-weight:600;">Enabled:</label>
-                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
-                    <input type="checkbox" id="ab-enabled" ${abSettings.enabled ? 'checked' : ''} style="width:18px;height:18px;">
-                    <span id="ab-enabled-label" style="font-size:0.9rem;color:var(--text-muted);">${abSettings.enabled ? 'Auto-backup is ON' : 'Auto-backup is OFF'}</span>
-                </label>
+                <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                        <input type="checkbox" id="ab-enabled" ${abSettings.enabled ? 'checked' : ''} style="width:18px;height:18px;">
+                        <span id="ab-enabled-label" style="font-size:0.9rem;color:var(--text-muted);">${abSettings.enabled ? 'Auto-backup is ON' : 'Auto-backup is OFF'}</span>
+                    </label>
+                    <span style="font-size:0.82rem;color:var(--gray-500);">— Automatically saves a backup at the end of each shift. Stored in the browser, downloadable anytime.</span>
+                </div>
 
                 <label style="font-weight:600;">Keep last:</label>
                 <div style="display:flex;align-items:center;gap:0.5rem;">
@@ -103,6 +106,22 @@ UI.registerPage('export', async (container) => {
                     <div class="stat-value">${toolCount}</div>
                     <div class="stat-label">Tools</div>
                 </div>
+                <div class="stat-card">
+                    <div class="stat-value">${pitkeyCount}</div>
+                    <div class="stat-label">PIT Keys</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${laptopCount}</div>
+                    <div class="stat-label">Laptops</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${evscannerCount}</div>
+                    <div class="stat-label">EV Scanners</div>
+                </div>
+                ${customAssetCount > 0 ? `<div class="stat-card">
+                    <div class="stat-value">${customAssetCount}</div>
+                    <div class="stat-label">Custom Assets</div>
+                </div>` : ''}
                 <div class="stat-card">
                     <div class="stat-value">${techCount}</div>
                     <div class="stat-label">Technicians</div>
@@ -247,6 +266,75 @@ UI.registerPage('export', async (container) => {
                 const ws = XLSX.utils.json_to_sheet(toolRows);
                 ws['!cols'] = Array(7).fill({ wch: 18 });
                 XLSX.utils.book_append_sheet(wb, ws, 'Tools');
+            }
+
+            // PIT Keys sheet
+            if (data.pitkeys && data.pitkeys.length > 0) {
+                const pkRows = data.pitkeys.map(r => ({
+                    'ID': r.id,
+                    'Key Number': r.keyNumber || '',
+                    'Vehicle ID': r.vehicleId || '',
+                    'Model': r.model || '',
+                    'Status': r.status,
+                    'Checkouts': r.checkoutCount || 0,
+                    'Notes': r.notes || '',
+                    'Created': r.createdAt ? new Date(r.createdAt).toLocaleString() : ''
+                }));
+                const ws = XLSX.utils.json_to_sheet(pkRows);
+                ws['!cols'] = Array(8).fill({ wch: 18 });
+                XLSX.utils.book_append_sheet(wb, ws, 'PIT Keys');
+            }
+
+            // Laptops sheet
+            if (data.laptops && data.laptops.length > 0) {
+                const lpRows = data.laptops.map(r => ({
+                    'ID': r.id,
+                    'Serial Number': r.serialNumber || '',
+                    'Model': r.model || '',
+                    'Hostname': r.hostname || '',
+                    'Status': r.status,
+                    'Checkouts': r.checkoutCount || 0,
+                    'Notes': r.notes || '',
+                    'Created': r.createdAt ? new Date(r.createdAt).toLocaleString() : ''
+                }));
+                const ws = XLSX.utils.json_to_sheet(lpRows);
+                ws['!cols'] = Array(8).fill({ wch: 18 });
+                XLSX.utils.book_append_sheet(wb, ws, 'Laptops');
+            }
+
+            // EV Scanners sheet
+            if (data.evscanners && data.evscanners.length > 0) {
+                const evRows = data.evscanners.map(r => ({
+                    'ID': r.id,
+                    'Serial Number': r.serialNumber || '',
+                    'Model': r.model || '',
+                    'Status': r.status,
+                    'Checkouts': r.checkoutCount || 0,
+                    'Repairs': r.repairCount || 0,
+                    'Notes': r.notes || '',
+                    'Created': r.createdAt ? new Date(r.createdAt).toLocaleString() : ''
+                }));
+                const ws = XLSX.utils.json_to_sheet(evRows);
+                ws['!cols'] = Array(8).fill({ wch: 18 });
+                XLSX.utils.book_append_sheet(wb, ws, 'EV Scanners');
+            }
+
+            // Custom Assets sheet
+            if (data.customAssets && data.customAssets.length > 0) {
+                const caRows = data.customAssets.map(r => ({
+                    'ID': r.id,
+                    'Asset Type': r.assetType || '',
+                    'Name': r.name || '',
+                    'Serial Number': r.serialNumber || '',
+                    'Model': r.model || '',
+                    'Status': r.status,
+                    'Checkouts': r.checkoutCount || 0,
+                    'Notes': r.notes || '',
+                    'Created': r.createdAt ? new Date(r.createdAt).toLocaleString() : ''
+                }));
+                const ws = XLSX.utils.json_to_sheet(caRows);
+                ws['!cols'] = Array(9).fill({ wch: 18 });
+                XLSX.utils.book_append_sheet(wb, ws, 'Custom Assets');
             }
 
             // Technicians sheet
@@ -543,8 +631,65 @@ UI.registerPage('export', async (container) => {
                 }
             }
 
+            // --- PIT Keys ---
+            const pkRows = readSheet('PIT Keys');
+            if (pkRows && pkRows.length > 0) {
+                const pks = pkRows.map(r => ({
+                    id: r['ID'] || '', keyNumber: r['Key Number'] || '', vehicleId: r['Vehicle ID'] || '',
+                    model: r['Model'] || '', assetType: 'pitkey', status: r['Status'] || 'Available',
+                    checkoutCount: parseInt(r['Checkouts']) || 0, notes: r['Notes'] || '',
+                    inServiceDate: new Date().toISOString(), outOfServiceDate: null,
+                    createdAt: r['Created'] ? new Date(r['Created']).toISOString() : new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })).filter(r => r.id);
+                if (pks.length > 0) { await DB.bulkPut('pitkeys', pks); results.push(`🔑 ${pks.length} PIT keys`); totalRecords += pks.length; }
+            }
+
+            // --- Laptops ---
+            const lpRows = readSheet('Laptops');
+            if (lpRows && lpRows.length > 0) {
+                const lps = lpRows.map(r => ({
+                    id: r['ID'] || '', serialNumber: r['Serial Number'] || '', model: r['Model'] || '',
+                    hostname: r['Hostname'] || '', assetType: 'laptop', status: r['Status'] || 'Available',
+                    checkoutCount: parseInt(r['Checkouts']) || 0, notes: r['Notes'] || '',
+                    inServiceDate: new Date().toISOString(), outOfServiceDate: null,
+                    createdAt: r['Created'] ? new Date(r['Created']).toISOString() : new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })).filter(r => r.id);
+                if (lps.length > 0) { await DB.bulkPut('laptops', lps); results.push(`💻 ${lps.length} laptops`); totalRecords += lps.length; }
+            }
+
+            // --- EV Scanners ---
+            const evRows = readSheet('EV Scanners');
+            if (evRows && evRows.length > 0) {
+                const evs = evRows.map(r => ({
+                    id: r['ID'] || '', serialNumber: r['Serial Number'] || '', model: r['Model'] || '',
+                    assetType: 'evscanner', status: r['Status'] || 'Available',
+                    checkoutCount: parseInt(r['Checkouts']) || 0, repairCount: parseInt(r['Repairs']) || 0,
+                    maintenanceHistory: [], notes: r['Notes'] || '',
+                    inServiceDate: new Date().toISOString(), outOfServiceDate: null,
+                    createdAt: r['Created'] ? new Date(r['Created']).toISOString() : new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })).filter(r => r.id);
+                if (evs.length > 0) { await DB.bulkPut('evscanners', evs); results.push(`📱 ${evs.length} EV scanners`); totalRecords += evs.length; }
+            }
+
+            // --- Custom Assets ---
+            const caRows = readSheet('Custom Assets');
+            if (caRows && caRows.length > 0) {
+                const cas = caRows.map(r => ({
+                    id: r['ID'] || '', assetType: r['Asset Type'] || 'custom', name: r['Name'] || '',
+                    serialNumber: r['Serial Number'] || '', model: r['Model'] || '',
+                    status: r['Status'] || 'Available', checkoutCount: parseInt(r['Checkouts']) || 0,
+                    notes: r['Notes'] || '', inServiceDate: new Date().toISOString(), outOfServiceDate: null,
+                    createdAt: r['Created'] ? new Date(r['Created']).toISOString() : new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })).filter(r => r.id);
+                if (cas.length > 0) { await DB.bulkPut('customAssets', cas); results.push(`📦 ${cas.length} custom assets`); totalRecords += cas.length; }
+            }
+
             if (totalRecords === 0) {
-                statusEl.innerHTML = `<p style="color:var(--warning);font-weight:600;">⚠️ No data found. Make sure the Excel file has sheets named: Radios, Batteries, Tools, Technicians, or Transactions.</p>`;
+                statusEl.innerHTML = `<p style="color:var(--warning);font-weight:600;">⚠️ No data found. Make sure the Excel file has sheets named: Radios, Batteries, Tools, PIT Keys, Laptops, EV Scanners, Technicians, or Transactions.</p>`;
             } else {
                 statusEl.innerHTML = `
                     <div style="background:var(--success-light);border:1px solid var(--success);border-radius:var(--radius);padding:1rem;">
@@ -612,7 +757,7 @@ UI.registerPage('export', async (container) => {
                     This will permanently delete ALL data!
                 </p>
                 <p style="color:var(--text-secondary);margin-bottom:0.75rem;">
-                    All radios, batteries, technicians, transactions, and audit logs will be erased.<br>
+                    All radios, batteries, tools, PIT keys, laptops, EV scanners, custom assets, technicians, transactions, and audit logs will be erased.<br>
                     <strong>This cannot be undone.</strong> Export a backup first if needed.
                 </p>
                 <p style="margin-bottom:0.5rem;font-size:0.85rem;">Type <strong style="color:var(--danger);">DELETE</strong> to confirm:</p>
@@ -638,7 +783,7 @@ UI.registerPage('export', async (container) => {
             if (confirmInput.value.trim() !== 'DELETE') return;
             UI.closeModal();
             try {
-                const stores = ['radios', 'batteries', 'tools', 'technicians', 'transactions', 'auditLog'];
+                const stores = ['radios', 'batteries', 'tools', 'pitkeys', 'laptops', 'evscanners', 'customAssets', 'technicians', 'transactions', 'auditLog'];
                 for (const store of stores) {
                     await DB.clear(store);
                 }

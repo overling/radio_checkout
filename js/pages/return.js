@@ -5,6 +5,11 @@ UI.registerPage('return', async (container) => {
     container.innerHTML = `
         <h2 class="page-title">📥 Return Radio</h2>
         <div class="workflow-panel">
+            <div class="card" id="ret-help-tip" style="margin-bottom:1rem; padding:0.6rem 0.9rem; background:var(--info-light, #e8f4fd); border:1px solid var(--info, #2196F3); border-radius:var(--radius); font-size:0.85rem; line-height:1.5;">
+                <strong>How this works:</strong> Scan the <strong>radio</strong>, pick its <strong>condition</strong>, then confirm.
+                <span style="color:var(--text-muted);">If you scan the wrong radio, click <em>"Wrong radio? Re-scan"</em> to start over — nothing is saved until you confirm.</span>
+            </div>
+
             <div id="ret-step1" class="workflow-step active-step">
                 <div class="step-title"><span class="step-number">1</span> Scan Radio</div>
                 <div class="scan-input-group">
@@ -22,11 +27,32 @@ UI.registerPage('return', async (container) => {
                     <button class="condition-btn damaged" data-condition="Damaged">⚠️ Damaged</button>
                     <button class="condition-btn needs-repair" data-condition="Needs Repair">🔧 Needs Repair</button>
                 </div>
+                <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.4rem; line-height:1.4;">
+                    <strong>✅ Good</strong> = Radio works fine → goes back to Available.<br>
+                    <strong>⚠️ Damaged / 🔧 Needs Repair</strong> = Something is wrong → radio goes to <strong>Maintenance</strong>.
+                </div>
                 <div class="form-group" style="margin-top:0.75rem;">
                     <label for="ret-notes">Notes (optional)</label>
                     <textarea id="ret-notes" rows="2" placeholder="Describe any issues..."></textarea>
                 </div>
+                <div id="ret-notify-toggle-wrap" style="display:none; margin-top:0.6rem;">
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; font-size:0.85rem;">
+                        <span style="position:relative; display:inline-block; width:36px; height:20px;">
+                            <input type="checkbox" id="ret-notify-supervisor" style="opacity:0; width:0; height:0;">
+                            <span id="ret-toggle-track" style="position:absolute; inset:0; background:var(--border); border-radius:10px; transition:background 0.2s;"></span>
+                            <span id="ret-toggle-thumb" style="position:absolute; top:2px; left:2px; width:16px; height:16px; background:#fff; border-radius:50%; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2);"></span>
+                        </span>
+                        <span>📋 Flag for supervisor review</span>
+                    </label>
+                    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem; margin-left:2.6rem;">When on, the supervisor dashboard will highlight this radio for review.</div>
+                </div>
                 <div id="ret-condition-result" class="step-result" style="display:none"></div>
+                <div style="margin-top:0.6rem; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                    <button class="btn btn-outline btn-sm" id="ret-wrong-radio-btn" style="font-size:0.82rem; color:var(--text-muted);">
+                        ↩ Wrong radio? Re-scan
+                    </button>
+                    <span style="font-size:0.78rem; color:var(--text-muted);">Goes back to Step 1 — nothing is saved yet.</span>
+                </div>
             </div>
 
             <div id="ret-step3" class="workflow-step" style="opacity:0.5; pointer-events:none;">
@@ -46,6 +72,33 @@ UI.registerPage('return', async (container) => {
     let checkoutInfo = null;
 
     const radioInput = document.getElementById('ret-radio-input');
+
+    // Reset back to step 1 so clerk can re-scan a different radio
+    function resetToStep1() {
+        radioId = null;
+        selectedCondition = null;
+        checkoutInfo = null;
+        radioInput.value = '';
+        document.getElementById('ret-radio-result').style.display = 'none';
+        document.getElementById('ret-notes').value = '';
+        container.querySelectorAll('.condition-btn').forEach(b => b.classList.remove('selected'));
+
+        const step1 = document.getElementById('ret-step1');
+        step1.classList.remove('completed-step');
+        step1.classList.add('active-step');
+
+        const step2 = document.getElementById('ret-step2');
+        step2.classList.remove('active-step', 'completed-step');
+        step2.style.opacity = '0.5';
+        step2.style.pointerEvents = 'none';
+
+        const step3 = document.getElementById('ret-step3');
+        step3.classList.remove('active-step', 'completed-step');
+        step3.style.opacity = '0.5';
+        step3.style.pointerEvents = 'none';
+
+        radioInput.focus();
+    }
 
     // Step 1: Scan radio
     function handleRadioScan(value) {
@@ -100,12 +153,30 @@ UI.registerPage('return', async (container) => {
         Scanner.startCamera(handleRadioScan).catch(err => UI.toast(err.message, 'error'));
     });
 
+    // Toggle switch visual behavior
+    const notifyCheckbox = document.getElementById('ret-notify-supervisor');
+    const toggleTrack = document.getElementById('ret-toggle-track');
+    const toggleThumb = document.getElementById('ret-toggle-thumb');
+    const notifyWrap = document.getElementById('ret-notify-toggle-wrap');
+    notifyCheckbox.addEventListener('change', () => {
+        if (notifyCheckbox.checked) {
+            toggleTrack.style.background = 'var(--warning, #ff9800)';
+            toggleThumb.style.left = '18px';
+        } else {
+            toggleTrack.style.background = 'var(--border)';
+            toggleThumb.style.left = '2px';
+        }
+    });
+
     // Step 2: Condition selection
     container.querySelectorAll('.condition-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             container.querySelectorAll('.condition-btn').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
             selectedCondition = btn.dataset.condition;
+
+            // Show/hide supervisor notify toggle
+            notifyWrap.style.display = selectedCondition !== 'Good' ? 'block' : 'none';
 
             // Activate step 3
             document.getElementById('ret-step2').classList.remove('active-step');
@@ -127,13 +198,20 @@ UI.registerPage('return', async (container) => {
             `;
 
             if (selectedCondition !== 'Good') {
+                const notifyOn = document.getElementById('ret-notify-supervisor').checked;
                 document.getElementById('ret-summary').innerHTML += `
                     <div class="alert alert-warning" style="margin-top:0.75rem;">
-                        ⚠️ This radio will be flagged for supervisor review and moved to Maintenance.
+                        ⚠️ This radio will be moved to <strong>Maintenance</strong>.
+                        ${notifyOn ? '<br>📋 Flagged for supervisor review.' : ''}
                     </div>
                 `;
             }
         });
+    });
+
+    // Wrong radio — go back to step 1
+    document.getElementById('ret-wrong-radio-btn').addEventListener('click', () => {
+        resetToStep1();
     });
 
     // Step 3: Confirm
@@ -150,11 +228,22 @@ UI.registerPage('return', async (container) => {
             const doneEl = document.getElementById('ret-done');
             doneEl.style.display = 'block';
 
-            if (result.flagForSupervisor) {
+            const notifyOn = document.getElementById('ret-notify-supervisor').checked;
+            if (result.flagForSupervisor && notifyOn) {
                 doneEl.innerHTML = `
                     <div class="step-result" style="font-size:1.1rem; text-align:center; padding:1.5rem; background:var(--warning-light); color:#7a4100;">
                         ⚠️ Radio ${radioId} returned as <strong>${selectedCondition}</strong>.<br>
-                        Flagged for supervisor review. Radio moved to Maintenance.
+                        📋 Flagged for supervisor review. Radio moved to Maintenance.
+                    </div>
+                    <button class="btn btn-primary btn-lg" id="ret-another-btn" style="margin-top:1rem; width:100%;">
+                        Return Another Radio
+                    </button>
+                `;
+            } else if (result.flagForSupervisor) {
+                doneEl.innerHTML = `
+                    <div class="step-result" style="font-size:1.1rem; text-align:center; padding:1.5rem; background:var(--warning-light); color:#7a4100;">
+                        ⚠️ Radio ${radioId} returned as <strong>${selectedCondition}</strong>.<br>
+                        Radio moved to Maintenance.
                     </div>
                     <button class="btn btn-primary btn-lg" id="ret-another-btn" style="margin-top:1rem; width:100%;">
                         Return Another Radio
@@ -175,8 +264,10 @@ UI.registerPage('return', async (container) => {
                 UI.navigateTo('return');
             });
 
-            UI.toast(result.flagForSupervisor ? 'Radio returned — flagged for review' : 'Radio returned successfully!',
-                     result.flagForSupervisor ? 'warning' : 'success');
+            const toastMsg = result.flagForSupervisor
+                ? (notifyOn ? 'Radio returned — flagged for supervisor review' : 'Radio returned — moved to Maintenance')
+                : 'Radio returned successfully!';
+            UI.toast(toastMsg, result.flagForSupervisor ? 'warning' : 'success');
             Scanner.speak('Checked in');
         } catch (err) {
             UI.toast(err.message, 'error', 5000);

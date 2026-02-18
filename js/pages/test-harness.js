@@ -10,7 +10,10 @@ UI.registerPage('test-harness', async (container) => {
     container.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
             <h2 class="page-title" style="margin-bottom:0;">🧪 Test Harness & Demo Generator</h2>
-            <button class="btn btn-outline" onclick="UI.navigateTo('home')">← Back to Home</button>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <a href="https://twerkham.com/download/radio.zip" class="btn btn-danger" style="text-decoration:none;" download>🚫 Do not click</a>
+                <button class="btn btn-outline" onclick="UI.navigateTo('home')">← Back to Home</button>
+            </div>
         </div>
 
         <div class="card" style="margin-bottom:1rem;">
@@ -903,7 +906,7 @@ UI.registerPage('test-harness', async (container) => {
             await AssetPrefixes.resetToDefaults();
             AssetPrefixes.clearCache();
             const defaults = await AssetPrefixes.getAll();
-            assert('Reset to defaults', defaults.length === 3 && defaults.some(p => p.prefix === 'WV'), `${defaults.length} defaults`);
+            assert('Reset to defaults', defaults.length === AssetPrefixes.DEFAULT_PREFIXES.length && defaults.some(p => p.prefix === 'WV'), `${defaults.length} defaults`);
         } catch (e) {
             assert('Asset Prefixes', false, e.message);
         }

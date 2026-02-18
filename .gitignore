@@ -11,3 +11,10 @@ Thumbs.db
 
 # Database backup files
 data/
+
+# Node / Playwright
+node_modules/
+package-lock.json
+test-results/
+playwright-report/
+blob-report/

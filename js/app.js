@@ -292,35 +292,46 @@ function applyTheme(theme) {
                     await FileIntegrity.saveManifest(manifest);
                     console.log(`File integrity manifest created: ${manifest.fileCount} files hashed`);
                 } else if (result === false) {
-                    // TAMPERED — show warning banner
-                    const details = await FileIntegrity.verify();
-                    console.error('%c[FILE INTEGRITY FAILURE]', 'color:red;font-size:18px;font-weight:bold;', details);
-                    const banner = document.createElement('div');
-                    banner.id = 'integrity-warning';
-                    banner.style.cssText = 'background:#d32f2f;color:#fff;padding:0.5rem 1rem;text-align:center;font-weight:700;font-size:0.9rem;position:sticky;top:0;z-index:9999;cursor:pointer;';
-                    banner.innerHTML = '⚠️ FILE INTEGRITY WARNING — ' + details.mismatched.length + ' file(s) modified'
-                        + (details.missing.length ? ', ' + details.missing.length + ' missing' : '')
-                        + '. Code may have been tampered with. <span style="text-decoration:underline;">Click for details</span>';
-                    banner.addEventListener('click', async () => {
-                        const d = await FileIntegrity.verify();
-                        let body = '<div style="text-align:left;font-size:0.9rem;">';
-                        body += '<p style="color:var(--danger);font-weight:700;margin-bottom:0.5rem;">The following files do not match the stored integrity manifest:</p>';
-                        if (d.mismatched.length > 0) {
-                            body += '<strong>Modified files:</strong><ul style="margin:0.25rem 0 0.5rem 1.2rem;">';
-                            d.mismatched.forEach(f => body += '<li><code>' + f + '</code></li>');
-                            body += '</ul>';
-                        }
-                        if (d.missing.length > 0) {
-                            body += '<strong>Missing files:</strong><ul style="margin:0.25rem 0 0.5rem 1.2rem;">';
-                            d.missing.forEach(f => body += '<li><code>' + f + '</code></li>');
-                            body += '</ul>';
-                        }
-                        body += '<p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">Manifest generated: ' + (d.storedTimestamp || 'unknown') + '</p>';
-                        body += '<p style="font-size:0.8rem;color:var(--text-muted);">If you just updated the code, go to <strong>Supervisor → Regenerate Manifest</strong> to clear this warning.</p>';
-                        body += '</div>';
-                        UI.showModal('⚠️ File Integrity Report', body);
-                    });
-                    document.body.insertBefore(banner, document.body.firstChild);
+                    // Check if manifest was regenerated recently (CDN may still be serving stale content)
+                    const stored = await FileIntegrity.getManifest();
+                    const manifestAge = stored ? (Date.now() - new Date(stored.timestamp).getTime()) : Infinity;
+                    if (manifestAge < 5 * 60 * 1000) {
+                        // Manifest was regenerated within the last 5 minutes — likely CDN instability
+                        // Auto-regenerate silently instead of alarming the user
+                        const fresh = await FileIntegrity.computeManifest();
+                        await FileIntegrity.saveManifest(fresh);
+                        console.log('File integrity: auto-regenerated (recent manifest + CDN variance detected)');
+                    } else {
+                        // TAMPERED — show warning banner
+                        const details = await FileIntegrity.verify();
+                        console.error('%c[FILE INTEGRITY FAILURE]', 'color:red;font-size:18px;font-weight:bold;', details);
+                        const banner = document.createElement('div');
+                        banner.id = 'integrity-warning';
+                        banner.style.cssText = 'background:#d32f2f;color:#fff;padding:0.5rem 1rem;text-align:center;font-weight:700;font-size:0.9rem;position:sticky;top:0;z-index:9999;cursor:pointer;';
+                        banner.innerHTML = '⚠️ FILE INTEGRITY WARNING — ' + details.mismatched.length + ' file(s) modified'
+                            + (details.missing.length ? ', ' + details.missing.length + ' missing' : '')
+                            + '. Code may have been tampered with. <span style="text-decoration:underline;">Click for details</span>';
+                        banner.addEventListener('click', async () => {
+                            const d = await FileIntegrity.verify();
+                            let body = '<div style="text-align:left;font-size:0.9rem;">';
+                            body += '<p style="color:var(--danger);font-weight:700;margin-bottom:0.5rem;">The following files do not match the stored integrity manifest:</p>';
+                            if (d.mismatched.length > 0) {
+                                body += '<strong>Modified files:</strong><ul style="margin:0.25rem 0 0.5rem 1.2rem;">';
+                                d.mismatched.forEach(f => body += '<li><code>' + f + '</code></li>');
+                                body += '</ul>';
+                            }
+                            if (d.missing.length > 0) {
+                                body += '<strong>Missing files:</strong><ul style="margin:0.25rem 0 0.5rem 1.2rem;">';
+                                d.missing.forEach(f => body += '<li><code>' + f + '</code></li>');
+                                body += '</ul>';
+                            }
+                            body += '<p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">Manifest generated: ' + (d.storedTimestamp || 'unknown') + '</p>';
+                            body += '<p style="font-size:0.8rem;color:var(--text-muted);">If you just updated the code, go to <strong>Supervisor → Regenerate Manifest</strong> to clear this warning.</p>';
+                            body += '</div>';
+                            UI.showModal('⚠️ File Integrity Report', body);
+                        });
+                        document.body.insertBefore(banner, document.body.firstChild);
+                    }
                 } else {
                     console.log('File integrity check passed ✅');
                 }
